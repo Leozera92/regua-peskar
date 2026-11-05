@@ -1,0 +1,44 @@
+name: Gerar APK
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Compilar APK
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+          cp app/build/outputs/apk/debug/app-debug.apk peskar-regua.apk
+
+      - name: Guardar APK (aba Actions)
+        uses: actions/upload-artifact@v4
+        with:
+          name: peskar-regua-apk
+          path: peskar-regua.apk
+
+      - name: Publicar em Releases (download direto pelo celular)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: PESKAR Régua — build ${{ github.run_number }}
+          body: APK de teste do piloto. Baixe peskar-regua.apk no celular Android e instale.
+          files: peskar-regua.apk
