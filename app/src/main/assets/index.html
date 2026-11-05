@@ -1,0 +1,988 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0d1a15"><style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style></head><body><title>PESKAR Régua 2.0</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700;900&display=swap">
+<style>
+/* Layout: app de uma tela, barra superior + conteúdo rolável + navegação inferior fixa (uso com uma mão no barco) */
+:root{
+  --bg:#0d1a15; --surface:#16302a; --surface2:#1d3d33; --line:#2c5144;
+  --fg:#eef3ec; --muted:#9fb5a8; --lime:#cfee6a; --ink:#0d1a15;
+  --red:#e06a60; --amber:#d6a23f; --green:#3fa36a;
+  --font:"Lato", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color-scheme:dark;
+}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--font);font-size:15px;line-height:1.45;-webkit-tap-highlight-color:transparent}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);background:var(--bg);z-index:30}
+*{box-sizing:border-box}
+button{font:inherit;color:inherit}
+.app{display:flex;flex-direction:column;min-height:100%;padding-bottom:calc(72px + env(safe-area-inset-bottom,0px))}
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--bg);display:flex;align-items:center;gap:14px;padding-block:14px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));border-bottom:1px solid var(--line)}
+.brand{font-weight:900;letter-spacing:.22em;font-size:15px}
+.tag{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;letter-spacing:.14em;color:var(--muted)}
+.tag::before{content:"";width:22px;height:5px;background:var(--lime);border-radius:1px}
+.crumb{margin-left:auto;font-size:12px;color:var(--muted);font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+main{flex:1;padding-block:18px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));max-width:720px;width:100%;margin:0 auto}
+.eyebrow{font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--lime)}
+h1{font-size:26px;line-height:1.15;margin:6px 0 6px;font-weight:900;text-wrap:balance}
+h2{font-size:18px;margin:0 0 4px;font-weight:900;text-wrap:balance}
+p.lead{color:var(--muted);margin:0 0 18px}
+.stack{display:flex;flex-direction:column;gap:14px}
+.field{display:flex;flex-direction:column;gap:6px}
+.field label{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+select,input[type=text]{background:var(--surface);border:1px solid var(--line);color:var(--fg);border-radius:10px;padding:12px;font:inherit;width:100%}
+select:focus,input:focus,button:focus-visible{outline:2px solid var(--lime);outline-offset:2px}
+.checks{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.checks li{display:flex;gap:10px;align-items:flex-start;color:var(--fg)}
+.checks li::before{content:"✓";flex:none;width:22px;height:22px;border-radius:50%;background:var(--lime);color:var(--ink);font-weight:900;font-size:13px;display:grid;place-items:center}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px}
+.btn{appearance:none;border:0;border-radius:999px;padding:14px 20px;font-weight:900;letter-spacing:.04em;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:50px}
+.btn.primary{background:var(--lime);color:var(--ink)}
+.btn.ghost{background:transparent;border:1px solid var(--line);color:var(--fg)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+.row>.btn{flex:1 1 140px}
+.note{font-size:12.5px;color:var(--muted);font-style:italic}
+
+/* câmera */
+.cam{position:relative;border-radius:16px;overflow:hidden;background:#000;aspect-ratio:4/3;max-width:100%;border:4px solid var(--red);transition:border-color .2s}
+.cam.yellow{border-color:var(--amber)} .cam.green{border-color:var(--lime)}
+.cam video,.cam canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+.statusbar{display:flex;gap:10px;align-items:center;padding:12px 14px;border-radius:12px;background:var(--surface);border:1px solid var(--line);margin-top:12px}
+.dot{flex:none;width:16px;height:16px;border-radius:50%;background:var(--red)}
+.dot.yellow{background:var(--amber)} .dot.green{background:var(--green)}
+.statusbar b{display:block;font-size:13px;letter-spacing:.06em}
+.statusbar span{font-size:13px;color:var(--muted)}
+.shutter{width:76px;height:76px;border-radius:50%;border:5px solid var(--fg);background:var(--lime);margin:16px auto 0;display:block;cursor:pointer}
+.shutter:disabled{background:var(--surface2);opacity:.6}
+
+/* revisão */
+.stage{position:relative;border-radius:14px;overflow:hidden;background:#000;touch-action:none;user-select:none}
+.stage>canvas.photo{display:block;width:100%;height:auto}
+.handle{position:absolute;width:44px;height:44px;margin:-22px 0 0 -22px;border-radius:50%;touch-action:none;cursor:grab;display:grid;place-items:center}
+.handle::before{content:"";width:16px;height:16px;border-radius:50%;border:3px solid var(--ink);box-shadow:0 0 0 2px currentColor}
+.handle.tail{color:var(--lime)} .handle.tail::before{background:var(--lime)}
+.handle.snout{color:#fff} .handle.snout::before{background:#fff}
+.handle .lbl{position:absolute;top:-20px;white-space:nowrap;font-size:11px;font-weight:900;letter-spacing:.08em;background:var(--ink);color:currentColor;padding:2px 6px;border-radius:4px}
+.loupe{position:absolute;width:120px;height:120px;border-radius:50%;border:3px solid var(--lime);pointer-events:none;overflow:hidden;background:#000}
+.measure{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;background:#e8f0de;color:var(--ink);border-radius:14px;padding:14px 16px;margin-top:12px}
+.measure .k{font-size:11px;font-weight:900;letter-spacing:.14em;color:#2f6a45;text-transform:uppercase}
+.measure .v{font-size:40px;font-weight:900;line-height:1;font-variant-numeric:tabular-nums}
+.measure .v small{font-size:18px}
+.measure .u{font-size:12px;color:#3f5a48;text-align:right}
+.msgs{list-style:none;padding:0;margin:10px 0 0;display:grid;gap:6px}
+.msgs li{font-size:13.5px;padding:8px 12px;border-radius:10px;background:var(--surface);border-left:4px solid var(--amber)}
+.msgs li.ok{border-left-color:var(--green)} .msgs li.bad{border-left-color:var(--red)}
+
+/* capturas */
+.list{display:grid;gap:10px}
+.cap{display:grid;grid-template-columns:96px 1fr;gap:12px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px;text-align:left;cursor:pointer;width:100%}
+.cap img{width:96px;height:72px;object-fit:cover;border-radius:8px;background:#000}
+.cap .t{font-weight:900;font-size:20px;font-variant-numeric:tabular-nums}
+.cap .s{font-size:12.5px;color:var(--muted)}
+.cap>div{min-width:0}
+.chip{display:inline-block;font-size:10.5px;font-weight:900;letter-spacing:.1em;text-transform:uppercase;padding:3px 8px;border-radius:999px;margin-top:4px}
+.chip.recebida{background:#2b4b6b;color:#cfe3ff} .chip.revisao{background:#5b4a1e;color:#ffe3a3}
+.chip.refazer{background:#5e2622;color:#ffc9c3} .chip.homologada{background:var(--lime);color:var(--ink)}
+.chip.exemplo{background:var(--surface2);color:var(--muted)}
+.empty{text-align:center;color:var(--muted);padding:30px 10px}
+.done{text-align:center;padding:26px 10px}
+.done .ok{width:72px;height:72px;border-radius:50%;background:var(--lime);color:var(--ink);font-size:38px;font-weight:900;display:grid;place-items:center;margin:0 auto 14px}
+.detail img{width:100%;border-radius:12px}
+dl.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:12px 0}
+dl.kv dt{color:var(--muted);font-size:12.5px;text-transform:uppercase;letter-spacing:.06em;font-weight:700}
+dl.kv dd{margin:0;font-variant-numeric:tabular-nums}
+.ruler-prev{background:#fff;border-radius:10px;padding:6px;overflow-x:auto}
+.ruler-prev svg{width:100%;height:auto;display:block;min-width:520px}
+
+nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:25;background:var(--surface);border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(3,1fr);padding-bottom:env(safe-area-inset-bottom,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px)}
+nav.tabs button{background:none;border:0;padding:12px 4px 14px;font-size:12px;font-weight:900;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);cursor:pointer;border-top:3px solid transparent}
+nav.tabs button[aria-current="page"]{color:var(--lime);border-top-color:var(--lime)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="app">
+  <header class="top">
+    <div class="brand">PESKAR</div>
+    <div class="tag">RÉGUA 2.0</div>
+    <div class="crumb" id="crumb">Medir captura</div>
+  </header>
+  <main id="view"></main>
+</div>
+<nav class="tabs" aria-label="Seções">
+  <button id="tab-medir" data-tab="medir" aria-current="page">Medir</button>
+  <button id="tab-capturas" data-tab="capturas">Capturas</button>
+  <button id="tab-regua" data-tab="regua">Régua</button>
+</nav>
+<input type="file" id="filecam" accept="image/*" capture="environment" hidden>
+
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script>
+/* PESKAR Régua 2.0 — núcleo de medição por fotogrametria.
+   Detecta 4 marcadores ArUco (DICT_4X4_50, ids 0–3) impressos na régua,
+   calcula a homografia imagem → plano da régua (mm) e converte toques em medidas. */
+(function (root) {
+  const PK = {};
+
+  // Padrões internos 4x4 (1 = preto), ids 0..3 do dicionário ArUco DICT_4X4_50
+  PK.PATTERNS = {
+    0: [[0,1,0,0],[1,0,1,0],[1,1,0,0],[1,1,0,1]],
+    1: [[1,1,1,1],[0,0,0,0],[0,1,1,0],[0,1,0,1]],
+    2: [[1,1,0,0],[1,1,0,0],[1,1,0,1],[0,0,1,0]],
+    3: [[0,1,1,0],[0,1,1,0],[1,0,1,1],[1,0,0,1]]
+  };
+
+  // Geometria da régua de teste (mm). Origem: face do batente (zero), borda superior.
+  PK.RULER = {
+    code: 'PESKAR:R2-TESTE-0001',
+    scaleMm: 240,            // escala impressa 0–24 cm (cabe em A4 paisagem)
+    height: 100,
+    batente: 10,             // largura do batente à esquerda do zero
+    marker: 20,              // lado do marcador
+    markers: [
+      { id: 0, x: 12,  y: 74 },
+      { id: 1, x: 76,  y: 74 },
+      { id: 2, x: 140, y: 74 },
+      { id: 3, x: 204, y: 74 }
+    ],
+    qr: { x: 232, y: 76, size: 18 }
+  };
+
+  PK.markerCornersMm = function (m, s) {
+    s = s || PK.RULER.marker;
+    return [[m.x, m.y], [m.x + s, m.y], [m.x + s, m.y + s], [m.x, m.y + s]];
+  };
+
+  // ---------- álgebra ----------
+  function solve(A, b) { // Gauss com pivotamento parcial, A n×n
+    const n = b.length;
+    for (let i = 0; i < n; i++) {
+      let p = i;
+      for (let r = i + 1; r < n; r++) if (Math.abs(A[r][i]) > Math.abs(A[p][i])) p = r;
+      if (Math.abs(A[p][i]) < 1e-12) return null;
+      [A[i], A[p]] = [A[p], A[i]]; [b[i], b[p]] = [b[p], b[i]];
+      for (let r = i + 1; r < n; r++) {
+        const f = A[r][i] / A[i][i];
+        for (let c = i; c < n; c++) A[r][c] -= f * A[i][c];
+        b[r] -= f * b[i];
+      }
+    }
+    const x = new Array(n).fill(0);
+    for (let i = n - 1; i >= 0; i--) {
+      let s = b[i];
+      for (let c = i + 1; c < n; c++) s -= A[i][c] * x[c];
+      x[i] = s / A[i][i];
+    }
+    return x;
+  }
+
+  function normT(pts) {
+    let mx = 0, my = 0;
+    for (const p of pts) { mx += p[0]; my += p[1]; }
+    mx /= pts.length; my /= pts.length;
+    let d = 0;
+    for (const p of pts) d += Math.hypot(p[0] - mx, p[1] - my);
+    d = d / pts.length || 1;
+    const s = Math.SQRT2 / d;
+    return [[s, 0, -s * mx], [0, s, -s * my], [0, 0, 1]];
+  }
+  function mul(A, B) {
+    const C = [[0,0,0],[0,0,0],[0,0,0]];
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++)
+      for (let k = 0; k < 3; k++) C[i][j] += A[i][k] * B[k][j];
+    return C;
+  }
+  function inv3(m) {
+    const [a,b,c] = m[0], [d,e,f] = m[1], [g,h,i] = m[2];
+    const A = e*i - f*h, B = -(d*i - f*g), C = d*h - e*g;
+    const det = a*A + b*B + c*C;
+    if (Math.abs(det) < 1e-15) return null;
+    return [
+      [A/det, -(b*i - c*h)/det, (b*f - c*e)/det],
+      [B/det, (a*i - c*g)/det, -(a*f - c*d)/det],
+      [C/det, -(a*h - b*g)/det, (a*e - b*d)/det]
+    ];
+  }
+  PK.apply = function (H, x, y) {
+    const w = H[2][0]*x + H[2][1]*y + H[2][2];
+    return [(H[0][0]*x + H[0][1]*y + H[0][2]) / w, (H[1][0]*x + H[1][1]*y + H[1][2]) / w];
+  };
+  // Homografia src→dst por mínimos quadrados (DLT normalizado, h33 = 1)
+  PK.homography = function (src, dst) {
+    if (src.length < 4) return null;
+    const Ts = normT(src), Td = normT(dst);
+    const s = src.map(p => PK.apply(Ts, p[0], p[1]));
+    const d = dst.map(p => PK.apply(Td, p[0], p[1]));
+    const AtA = Array.from({ length: 8 }, () => new Array(8).fill(0));
+    const Atb = new Array(8).fill(0);
+    const addRow = (row, rhs) => {
+      for (let i = 0; i < 8; i++) {
+        Atb[i] += row[i] * rhs;
+        for (let j = 0; j < 8; j++) AtA[i][j] += row[i] * row[j];
+      }
+    };
+    for (let k = 0; k < s.length; k++) {
+      const [x, y] = s[k], [u, v] = d[k];
+      addRow([x, y, 1, 0, 0, 0, -u*x, -u*y], u);
+      addRow([0, 0, 0, x, y, 1, -v*x, -v*y], v);
+    }
+    const h = solve(AtA, Atb);
+    if (!h) return null;
+    const Hn = [[h[0], h[1], h[2]], [h[3], h[4], h[5]], [h[6], h[7], 1]];
+    const Tdi = inv3(Td);
+    if (!Tdi) return null;
+    const H = mul(Tdi, mul(Hn, Ts));
+    const k = H[2][2];
+    return H.map(r => r.map(v => v / k));
+  };
+  PK.inv3 = inv3;
+
+  // ---------- imagem ----------
+  PK.toGray = function (data, w, h) {
+    const g = new Uint8Array(w * h);
+    for (let i = 0, j = 0; i < g.length; i++, j += 4)
+      g[i] = (data[j] * 77 + data[j + 1] * 150 + data[j + 2] * 29) >> 8;
+    return g;
+  };
+
+  function adaptiveDark(g, w, h) {
+    const W = w + 1;
+    const I = new Float64Array(W * (h + 1));
+    for (let y = 0; y < h; y++) {
+      let row = 0;
+      for (let x = 0; x < w; x++) {
+        row += g[y * w + x];
+        I[(y + 1) * W + x + 1] = I[y * W + x + 1] + row;
+      }
+    }
+    const r = Math.max(8, Math.round(Math.min(w, h) / 14));
+    const bin = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) {
+      const y0 = Math.max(0, y - r), y1 = Math.min(h, y + r + 1);
+      for (let x = 0; x < w; x++) {
+        const x0 = Math.max(0, x - r), x1 = Math.min(w, x + r + 1);
+        const sum = I[y1 * W + x1] - I[y0 * W + x1] - I[y1 * W + x0] + I[y0 * W + x0];
+        const mean = sum / ((x1 - x0) * (y1 - y0));
+        bin[y * w + x] = g[y * w + x] < mean * 0.78 - 4 ? 1 : 0;
+      }
+    }
+    return bin;
+  }
+
+  function hull(pts) { // cadeia monótona
+    pts.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const cross = (o, a, b) => (a[0]-o[0])*(b[1]-o[1]) - (a[1]-o[1])*(b[0]-o[0]);
+    const lo = [], up = [];
+    for (const p of pts) {
+      while (lo.length >= 2 && cross(lo[lo.length-2], lo[lo.length-1], p) <= 0) lo.pop();
+      lo.push(p);
+    }
+    for (let i = pts.length - 1; i >= 0; i--) {
+      const p = pts[i];
+      while (up.length >= 2 && cross(up[up.length-2], up[up.length-1], p) <= 0) up.pop();
+      up.push(p);
+    }
+    up.pop(); lo.pop();
+    return lo.concat(up);
+  }
+  function polyArea(p) {
+    let a = 0;
+    for (let i = 0; i < p.length; i++) {
+      const q = p[(i + 1) % p.length];
+      a += p[i][0] * q[1] - q[0] * p[i][1];
+    }
+    return a / 2;
+  }
+
+  function quadFromHull(H) {
+    let cx = 0, cy = 0;
+    for (const p of H) { cx += p[0]; cy += p[1]; }
+    cx /= H.length; cy /= H.length;
+    let p0 = H[0], best = -1;
+    for (const p of H) { const d = Math.hypot(p[0]-cx, p[1]-cy); if (d > best) { best = d; p0 = p; } }
+    let p2 = H[0]; best = -1;
+    for (const p of H) { const d = Math.hypot(p[0]-p0[0], p[1]-p0[1]); if (d > best) { best = d; p2 = p; } }
+    let p1 = null, p3 = null, mx = -Infinity, mn = Infinity;
+    for (const p of H) {
+      const s = (p2[0]-p0[0])*(p[1]-p0[1]) - (p2[1]-p0[1])*(p[0]-p0[0]);
+      if (s > mx) { mx = s; p1 = p; }
+      if (s < mn) { mn = s; p3 = p; }
+    }
+    if (mx <= 0 || mn >= 0) return null;
+    let q = [p0, p1, p2, p3];
+    if (polyArea(q) < 0) q = [p0, p3, p2, p1];
+    return q;
+  }
+
+  // Refina cada lado com reta ajustada aos pontos de borda e intersecta
+  function refineQuad(q, edgePts) {
+    const lines = [];
+    for (let i = 0; i < 4; i++) {
+      const a = q[i], b = q[(i + 1) % 4];
+      const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy);
+      const ux = dx / L, uy = dy / L;
+      let n = 0, sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0;
+      for (const p of edgePts) {
+        const t = ((p[0]-a[0])*ux + (p[1]-a[1])*uy) / L;
+        if (t < 0.12 || t > 0.88) continue;
+        const dist = Math.abs((p[0]-a[0])*uy - (p[1]-a[1])*ux);
+        if (dist > 2.5) continue;
+        n++; sx += p[0]; sy += p[1]; sxx += p[0]*p[0]; syy += p[1]*p[1]; sxy += p[0]*p[1];
+      }
+      if (n < 4) { lines.push({ px: a[0], py: a[1], ux, uy }); continue; }
+      const mx = sx/n, my = sy/n;
+      const cxx = sxx/n - mx*mx, cyy = syy/n - my*my, cxy = sxy/n - mx*my;
+      const ang = 0.5 * Math.atan2(2*cxy, cxx - cyy);
+      let vx = Math.cos(ang), vy = Math.sin(ang);
+      if (vx*ux + vy*uy < 0) { vx = -vx; vy = -vy; }
+      lines.push({ px: mx, py: my, ux: vx, uy: vy });
+    }
+    const out = [];
+    for (let i = 0; i < 4; i++) {
+      const l1 = lines[(i + 3) % 4], l2 = lines[i];
+      const den = l1.ux * l2.uy - l1.uy * l2.ux;
+      if (Math.abs(den) < 1e-6) return q;
+      const t = ((l2.px - l1.px) * l2.uy - (l2.py - l1.py) * l2.ux) / den;
+      out.push([l1.px + t * l1.ux, l1.py + t * l1.uy]);
+    }
+    for (let i = 0; i < 4; i++) if (Math.hypot(out[i][0]-q[i][0], out[i][1]-q[i][1]) > 4) return q;
+    return out;
+  }
+
+  function sampleGray(g, w, h, x, y) {
+    const xi = Math.max(0, Math.min(w - 2, Math.floor(x))), yi = Math.max(0, Math.min(h - 2, Math.floor(y)));
+    const fx = Math.min(1, Math.max(0, x - xi)), fy = Math.min(1, Math.max(0, y - yi));
+    const i = yi * w + xi;
+    return (g[i] * (1-fx) + g[i+1] * fx) * (1-fy) + (g[i+w] * (1-fx) + g[i+w+1] * fx) * fy;
+  }
+
+  function decode(g, w, h, q) {
+    let best = null;
+    for (let s = 0; s < 4; s++) {
+      const c = [q[s], q[(s+1)%4], q[(s+2)%4], q[(s+3)%4]];
+      const H = PK.homography([[0,0],[6,0],[6,6],[0,6]], c);
+      if (!H) continue;
+      const v = [];
+      let lo = 255, hi = 0;
+      for (let r = 0; r < 6; r++) for (let k = 0; k < 6; k++) {
+        let acc = 0;
+        for (const [oy, ox] of [[0.35,0.35],[0.35,0.65],[0.65,0.35],[0.65,0.65],[0.5,0.5]]) {
+          const p = PK.apply(H, k + ox, r + oy);
+          acc += sampleGray(g, w, h, p[0], p[1]);
+        }
+        acc /= 5; v.push(acc);
+        if (acc < lo) lo = acc; if (acc > hi) hi = acc;
+      }
+      if (hi - lo < 25) return null;
+      const th = (lo + hi) / 2;
+      let borderBad = 0;
+      for (let r = 0; r < 6; r++) for (let k = 0; k < 6; k++)
+        if ((r === 0 || r === 5 || k === 0 || k === 5) && v[r*6+k] > th) borderBad++;
+      if (borderBad > 2) return null;
+      for (const id in PK.PATTERNS) {
+        const P = PK.PATTERNS[id];
+        let dist = 0;
+        for (let r = 0; r < 4; r++) for (let k = 0; k < 4; k++)
+          if ((v[(r+1)*6 + k+1] < th ? 1 : 0) !== P[r][k]) dist++;
+        if (dist <= 1 && (!best || dist < best.dist)) best = { id: +id, dist, corners: c, contrast: hi - lo };
+      }
+    }
+    return best;
+  }
+
+  // Detecta marcadores em uma imagem em tons de cinza
+  PK.detectMarkers = function (g, w, h) {
+    const bin = adaptiveDark(g, w, h);
+    const lab = new Uint8Array(w * h);
+    const queue = new Int32Array(w * h);
+    const minSide = Math.max(10, Math.min(w, h) / 70);
+    const maxSide = Math.max(w, h) / 2.5;
+    const found = [];
+    for (let start = 0; start < w * h; start++) {
+      if (!bin[start] || lab[start]) continue;
+      let head = 0, tail = 0;
+      queue[tail++] = start; lab[start] = 1;
+      let minx = w, maxx = 0, miny = h, maxy = 0;
+      while (head < tail) {
+        const p = queue[head++];
+        const x = p % w, y = (p / w) | 0;
+        if (x < minx) minx = x; if (x > maxx) maxx = x;
+        if (y < miny) miny = y; if (y > maxy) maxy = y;
+        if (x > 0 && bin[p-1] && !lab[p-1]) { lab[p-1] = 1; queue[tail++] = p-1; }
+        if (x < w-1 && bin[p+1] && !lab[p+1]) { lab[p+1] = 1; queue[tail++] = p+1; }
+        if (y > 0 && bin[p-w] && !lab[p-w]) { lab[p-w] = 1; queue[tail++] = p-w; }
+        if (y < h-1 && bin[p+w] && !lab[p+w]) { lab[p+w] = 1; queue[tail++] = p+w; }
+      }
+      const bw = maxx - minx + 1, bh = maxy - miny + 1;
+      if (bw < minSide || bh < minSide || bw > maxSide || bh > maxSide) continue;
+      if (minx === 0 || miny === 0 || maxx === w-1 || maxy === h-1) continue;
+      if (tail < bw * bh * 0.18) continue;
+      if (Math.max(bw, bh) / Math.min(bw, bh) > 4) continue;
+      // extremos por linha e coluna (bordas em coordenadas de pixel)
+      const rmin = new Int32Array(bh).fill(1e9), rmax = new Int32Array(bh).fill(-1);
+      const cmin = new Int32Array(bw).fill(1e9), cmax = new Int32Array(bw).fill(-1);
+      for (let i = 0; i < tail; i++) {
+        const p = queue[i], x = p % w, y = (p / w) | 0;
+        const ry = y - miny, cx = x - minx;
+        if (x < rmin[ry]) rmin[ry] = x; if (x > rmax[ry]) rmax[ry] = x;
+        if (y < cmin[cx]) cmin[cx] = y; if (y > cmax[cx]) cmax[cx] = y;
+      }
+      const pts = [], edge = [];
+      for (let r = 0; r < bh; r++) {
+        if (rmax[r] < 0) continue;
+        const y = miny + r;
+        pts.push([rmin[r], y], [rmin[r], y + 1], [rmax[r] + 1, y], [rmax[r] + 1, y + 1]);
+        edge.push([rmin[r], y + 0.5], [rmax[r] + 1, y + 0.5]);
+      }
+      for (let c = 0; c < bw; c++) {
+        if (cmax[c] < 0) continue;
+        const x = minx + c;
+        edge.push([x + 0.5, cmin[c]], [x + 0.5, cmax[c] + 1]);
+      }
+      const Hl = hull(pts);
+      if (Hl.length < 4) continue;
+      const ha = Math.abs(polyArea(Hl));
+      let q = quadFromHull(Hl);
+      if (!q) continue;
+      const qa = Math.abs(polyArea(q));
+      if (qa / ha < 0.88) continue;
+      const sides = [0,1,2,3].map(i => Math.hypot(q[(i+1)%4][0]-q[i][0], q[(i+1)%4][1]-q[i][1]));
+      if (Math.min(...sides) < minSide * 0.8 || Math.max(...sides) / Math.min(...sides) > 3.5) continue;
+      q = refineQuad(q, edge);
+      const dec = decode(g, w, h, q);
+      if (dec) found.push(dec);
+    }
+    // um por id (maior contraste)
+    const byId = {};
+    for (const m of found) if (!byId[m.id] || m.contrast > byId[m.id].contrast) byId[m.id] = m;
+    return Object.values(byId).sort((a, b) => a.id - b.id);
+  };
+
+  function sharpness(g, w, h, box) {
+    const x0 = Math.max(1, Math.floor(box[0])), y0 = Math.max(1, Math.floor(box[1]));
+    const x1 = Math.min(w - 2, Math.ceil(box[2])), y1 = Math.min(h - 2, Math.ceil(box[3]));
+    // gradiente máximo médio nas bordas dos marcadores (relativo ao contraste)
+    let sum = 0, n = 0, step = Math.max(1, Math.round((x1 - x0) / 300));
+    for (let y = y0; y < y1; y += step) for (let x = x0; x < x1; x += step) {
+      const i = y * w + x;
+      const gx = g[i+1] - g[i-1], gy = g[i+w] - g[i-w];
+      const m = gx*gx + gy*gy;
+      if (m > 400) { sum += Math.sqrt(m); n++; }
+    }
+    return n ? sum / n : 0;
+  }
+
+  /* Analisa a imagem. Retorna status: 'red' | 'yellow' | 'green' com mensagens. */
+  PK.analyze = function (g, w, h, opts) {
+    opts = opts || {};
+    const R = PK.RULER;
+    const markers = PK.detectMarkers(g, w, h);
+    const res = { markers, status: 'red', messages: [], w, h };
+    if (markers.length < 2) {
+      res.messages.push(markers.length ? 'Só 1 marcador visível. Mostre a régua inteira.' : 'Régua não encontrada. Enquadre a régua inteira com os 4 marcadores.');
+      return res;
+    }
+    const src = [], dst = [];
+    for (const m of markers) {
+      const mm = PK.markerCornersMm(R.markers.find(x => x.id === m.id));
+      for (let i = 0; i < 4; i++) { src.push(m.corners[i]); dst.push(mm[i]); }
+    }
+    const H = PK.homography(src, dst);
+    if (!H) { res.messages.push('Não foi possível calibrar a foto.'); return res; }
+    res.H = H; res.Hinv = inv3(H);
+    let se = 0;
+    for (let i = 0; i < src.length; i++) {
+      const p = PK.apply(H, src[i][0], src[i][1]);
+      se += (p[0]-dst[i][0])**2 + (p[1]-dst[i][1])**2;
+    }
+    res.rmsMm = Math.sqrt(se / src.length);
+    // resolução (mm por pixel) e inclinação
+    const sides = [];
+    for (const m of markers) for (let i = 0; i < 4; i++) {
+      const a = m.corners[i], b = m.corners[(i+1)%4];
+      sides.push(Math.hypot(b[0]-a[0], b[1]-a[1]));
+    }
+    const avgSide = sides.reduce((a, b) => a + b, 0) / sides.length;
+    res.mmPerPx = R.marker / avgSide;
+    res.tilt = Math.max(...sides) / Math.min(...sides);
+    // caixa da régua na imagem
+    const cornersRuler = [[-R.batente, 0], [R.scaleMm + 5, 0], [R.scaleMm + 5, R.height], [-R.batente, R.height]]
+      .map(p => PK.apply(res.Hinv, p[0], p[1]));
+    res.rulerPoly = cornersRuler;
+    const inside = cornersRuler.every(p => p[0] >= -2 && p[1] >= -2 && p[0] <= w + 2 && p[1] <= h + 2);
+    const xs = cornersRuler.map(p => p[0]), ys = cornersRuler.map(p => p[1]);
+    res.sharp = sharpness(g, w, h, [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]);
+    // incerteza estimada (mm): ajuste + 1 pixel de toque
+    res.uncertaintyMm = Math.sqrt(res.rmsMm ** 2 + (1.5 * res.mmPerPx) ** 2) * 2;
+
+    const issues = [];
+    if (markers.length < 4) issues.push(`${4 - markers.length} marcador(es) escondido(s). Deixe os 4 visíveis.`);
+    if (!inside) issues.push('Parte da régua está fora da foto.');
+    if (res.tilt > 1.9) issues.push('Foto muito inclinada. Fotografe de cima, paralelo à régua.');
+    else if (res.tilt > 1.35) issues.push('Foto um pouco inclinada. Alinhe o celular com a régua.');
+    if (res.rmsMm > 1.5) issues.push('Referências inconsistentes. Verifique reflexos e se a régua está plana.');
+    if (opts.checkSharp !== false && res.sharp < (opts.sharpMin || 40)) issues.push('Foto pouco nítida. Ajuste o foco e segure firme.');
+    if (opts.qrOk === false) issues.push('QR Code não lido. Não cubra o QR.');
+    res.messages = issues;
+    const severe = markers.length < 3 || res.tilt > 1.9 || res.rmsMm > 3;
+    res.status = severe ? 'red' : issues.length ? 'yellow' : 'green';
+    if (!issues.length) res.messages = ['Referências reconhecidas. Foto apta para medição.'];
+    return res;
+  };
+
+  // Converte ponto da imagem para mm na régua
+  PK.toMm = function (res, x, y) { return PK.apply(res.H, x, y); };
+  PK.toPx = function (res, x, y) { return PK.apply(res.Hinv, x, y); };
+
+  // ---------- desenho da régua (SVG em mm) ----------
+  PK.rulerSVG = function (qrGrid, opts) {
+    opts = opts || {};
+    const R = PK.RULER, pad = 6;
+    const W = R.batente + R.scaleMm + 22 + pad * 2, Hh = R.height + pad * 2 + (opts.caption ? 14 : 0);
+    const ox = pad + R.batente, oy = pad;
+    let s = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}mm" height="${Hh}mm" viewBox="0 0 ${W} ${Hh}">`;
+    s += `<rect x="0" y="0" width="${W}" height="${Hh}" fill="#ffffff"/>`;
+    s += `<rect x="${ox - R.batente}" y="${oy}" width="${R.batente + R.scaleMm + 22}" height="${R.height}" rx="2" fill="#eef2ea" stroke="#9fb39a" stroke-width="0.3"/>`;
+    s += `<rect x="${ox - R.batente}" y="${oy}" width="${R.batente}" height="${R.height}" fill="#5f7a62"/>`;
+    s += `<line x1="${ox}" y1="${oy}" x2="${ox}" y2="${oy + R.height}" stroke="#16251c" stroke-width="0.35"/>`;
+    for (let mm = 0; mm <= R.scaleMm; mm++) {
+      const len = mm % 10 === 0 ? 12 : mm % 5 === 0 ? 8 : 4.5;
+      s += `<line x1="${ox + mm}" y1="${oy}" x2="${ox + mm}" y2="${oy + len}" stroke="#16251c" stroke-width="${mm % 10 === 0 ? 0.35 : 0.18}"/>`;
+      if (mm % 10 === 0) s += `<text x="${ox + mm}" y="${oy + 17}" font-family="Lato, Arial, sans-serif" font-size="3.6" font-weight="700" text-anchor="middle" fill="#16251c">${mm / 10}</text>`;
+    }
+    s += `<text x="${ox + R.scaleMm + 4}" y="${oy + 17}" font-family="Lato, Arial, sans-serif" font-size="3" fill="#16251c">cm</text>`;
+    s += `<text x="${ox + 4}" y="${oy + 45}" font-family="Lato, Arial, sans-serif" font-size="4" font-weight="900" letter-spacing="1" fill="#9fb39a">PESKAR · RÉGUA 2.0 · ÁREA DO PEIXE</text>`;
+    for (const m of R.markers) {
+      const P = PK.PATTERNS[m.id], c = R.marker / 6;
+      s += `<rect x="${ox + m.x - 3}" y="${oy + m.y - 3}" width="${R.marker + 6}" height="${R.marker + 6}" fill="#ffffff"/>`;
+      s += `<rect x="${ox + m.x}" y="${oy + m.y}" width="${R.marker}" height="${R.marker}" fill="#000000"/>`;
+      for (let r = 0; r < 4; r++) for (let k = 0; k < 4; k++)
+        if (!P[r][k]) s += `<rect x="${(ox + m.x + (k + 1) * c).toFixed(3)}" y="${(oy + m.y + (r + 1) * c).toFixed(3)}" width="${(c + 0.02).toFixed(3)}" height="${(c + 0.02).toFixed(3)}" fill="#ffffff"/>`;
+    }
+    if (qrGrid) {
+      const n = qrGrid.length, q = R.qr, c = q.size / n;
+      s += `<rect x="${ox + q.x - 2}" y="${oy + q.y - 2}" width="${q.size + 4}" height="${q.size + 4}" fill="#ffffff"/>`;
+      for (let r = 0; r < n; r++) for (let k = 0; k < n; k++)
+        if (qrGrid[r][k]) s += `<rect x="${(ox + q.x + k * c).toFixed(3)}" y="${(oy + q.y + r * c).toFixed(3)}" width="${(c + 0.02).toFixed(3)}" height="${(c + 0.02).toFixed(3)}" fill="#000000"/>`;
+    }
+    if (opts.caption) {
+      const cy = oy + R.height + 9;
+      s += `<line x1="${ox}" y1="${cy - 3}" x2="${ox + 100}" y2="${cy - 3}" stroke="#16251c" stroke-width="0.4"/>`;
+      s += `<line x1="${ox}" y1="${cy - 5}" x2="${ox}" y2="${cy - 1}" stroke="#16251c" stroke-width="0.4"/><line x1="${ox + 100}" y1="${cy - 5}" x2="${ox + 100}" y2="${cy - 1}" stroke="#16251c" stroke-width="0.4"/>`;
+      s += `<text x="${ox + 104}" y="${cy - 1.8}" font-family="Lato, Arial, sans-serif" font-size="3" fill="#16251c">Confira: esta linha deve medir exatamente 10,0 cm.</text>`;
+    }
+    return s + '</svg>';
+  };
+
+  root.PK = PK;
+  if (typeof module !== 'undefined') module.exports = PK;
+})(typeof window !== 'undefined' ? window : globalThis);
+
+</script>
+<script>
+const QR_GRID = [[1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1], [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1], [1, 0, 1, 1, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 1, 0, 1, 1, 1, 0, 1], [1, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 1], [1, 0, 1, 1, 1, 0, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 1], [1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1], [1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1], [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0], [1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 0, 0, 0, 1, 0, 0], [1, 1, 1, 1, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 1, 1, 1, 1, 0, 1], [1, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1], [0, 0, 1, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 0, 1], [0, 0, 1, 1, 1, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 1], [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 1, 0], [1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 1, 1], [1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 0, 0, 1, 1], [1, 0, 1, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0], [1, 0, 1, 1, 1, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0], [1, 0, 1, 1, 1, 0, 1, 0, 1, 1, 1, 0, 0, 1, 1, 0, 0, 1, 0, 0, 1], [1, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 1], [1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1]];
+const TORNEIOS = ['Piloto PESKAR — Teste de bancada', 'Torneio parceiro — Etapa piloto', 'Treino livre'];
+const ESPECIES = ['Tucunaré', 'Robalo', 'Black bass', 'Traíra', 'Dourado', 'Outra'];
+const STATUS = { recebida: 'Recebida', revisao: 'Em revisão', refazer: 'Refazer foto', homologada: 'Homologada' };
+const S = { tab: 'medir', step: 'setup', torneio: TORNEIOS[0], especie: ESPECIES[0], stream: null, raf: 0, shot: null, viewId: null };
+const $ = (sel, el = document) => el.querySelector(sel);
+const view = $('#view');
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// ---------- armazenamento ----------
+function loadCaps() { try { return JSON.parse(localStorage.getItem('peskar.capturas') || '[]'); } catch (e) { return []; } }
+function saveCaps(list) {
+  for (let n = list.length; n > 0; n--) {
+    try { localStorage.setItem('peskar.capturas', JSON.stringify(list.slice(0, n))); return true; } catch (e) { }
+  }
+  return false;
+}
+let memCaps = loadCaps();
+
+// ---------- navegação ----------
+document.querySelectorAll('nav.tabs button').forEach(b => b.addEventListener('click', () => go(b.dataset.tab)));
+function go(tab, step) {
+  stopCam();
+  S.tab = tab; if (step) S.step = step; else if (tab === 'medir' && S.step !== 'review') S.step = 'setup';
+  document.querySelectorAll('nav.tabs button').forEach(b => b.setAttribute('aria-current', b.dataset.tab === tab ? 'page' : 'false'));
+  render(); window.scrollTo(0, 0);
+}
+function render() {
+  const crumb = { medir: 'Medir captura', capturas: 'Capturas', regua: 'Régua' }[S.tab];
+  $('#crumb').textContent = crumb;
+  if (S.tab === 'medir') {
+    if (S.step === 'setup') renderSetup();
+    else if (S.step === 'camera') renderCamera();
+    else if (S.step === 'review') renderReview();
+    else if (S.step === 'done') renderDone();
+  } else if (S.tab === 'capturas') S.viewId ? renderDetail() : renderList();
+  else renderRuler();
+}
+
+// ---------- 1. preparação ----------
+function renderSetup() {
+  view.innerHTML = `
+  <div class="eyebrow">Passo 1 · Prepare</div>
+  <h1>Focinho no batente. Cauda alinhada.</h1>
+  <p class="lead">Confira o evento e a espécie, posicione o peixe e abra a câmera.</p>
+  <div class="stack">
+    <div class="field"><label for="sel-torneio">Torneio</label>
+      <select id="sel-torneio">${TORNEIOS.map(t => `<option ${t === S.torneio ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></div>
+    <div class="field"><label for="sel-especie">Espécie</label>
+      <select id="sel-especie">${ESPECIES.map(t => `<option ${t === S.especie ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></div>
+    <div class="panel"><ul class="checks">
+      <li>Régua estável, limpa e sem reflexo nos marcadores.</li>
+      <li>Focinho encostado no batente de zero.</li>
+      <li>Peixe reto, cauda apoiada sobre a régua.</li>
+      <li>QR Code e os 4 marcadores à vista.</li>
+    </ul></div>
+    <button class="btn primary" id="btn-open">Abrir câmera</button>
+    <button class="btn ghost" id="btn-gallery">Usar foto da galeria</button>
+    <p class="note">Cuide do peixe: mãos úmidas, manuseio delicado e mínimo tempo fora d'água. Durante o piloto, a medição oficial do torneio continua valendo.</p>
+  </div>`;
+  $('#sel-torneio').onchange = e => S.torneio = e.target.value;
+  $('#sel-especie').onchange = e => S.especie = e.target.value;
+  $('#btn-open').onclick = () => go('medir', 'camera');
+  $('#btn-gallery').onclick = () => pickFile(false);
+}
+
+// ---------- 2. câmera ----------
+function camAvailable() { return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia); }
+async function renderCamera() {
+  view.innerHTML = `
+  <div class="eyebrow">Passo 2 · Enquadre</div>
+  <h1>Deixe a moldura ficar verde.</h1>
+  <div class="cam" id="cam"><video id="video" playsinline muted autoplay></video></div>
+  <div class="statusbar"><div class="dot" id="dot"></div><div><b id="st-title">PROCURANDO A RÉGUA</b><span id="st-msg">Mostre a régua inteira com os 4 marcadores.</span></div></div>
+  <button class="shutter" id="shutter" aria-label="Fotografar"></button>
+  <div class="row" style="margin-top:14px"><button class="btn ghost" id="btn-back">Voltar</button></div>`;
+  $('#btn-back').onclick = () => go('medir', 'setup');
+  $('#shutter').onclick = () => captureFromVideo();
+  if (!camAvailable()) return camFallback('Este navegador não liberou a câmera ao vivo.');
+  try {
+    S.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1440 } }, audio: false });
+  } catch (e) { return camFallback('A câmera ao vivo não está disponível aqui.'); }
+  const v = $('#video'); if (!v) return stopCam();
+  v.srcObject = S.stream; try { await v.play(); } catch (e) { }
+  liveLoop();
+}
+function camFallback(why) {
+  const cam = $('#cam'); if (!cam) return;
+  cam.outerHTML = `<div class="panel stack"><h2>Tire a foto pela câmera do celular</h2><p class="lead" style="margin:0">${esc(why)} A foto será verificada logo depois: se a moldura não ficar verde, o app pede outra.</p><button class="btn primary" id="btn-native">Fotografar</button></div>`;
+  $('#btn-native').onclick = () => pickFile(true);
+  const sh = $('#shutter'); if (sh) sh.hidden = true;
+  $('#st-title').textContent = 'MODO FOTO'; $('#st-msg').textContent = 'Use a câmera do aparelho e mantenha a régua inteira no quadro.';
+}
+function stopCam() {
+  cancelAnimationFrame(S.raf); S.raf = 0;
+  if (S.stream) { S.stream.getTracks().forEach(t => t.stop()); S.stream = null; }
+}
+const liveCanvas = document.createElement('canvas');
+let lastLive = 0;
+function liveLoop(t) {
+  S.raf = requestAnimationFrame(liveLoop);
+  const v = $('#video'); if (!v || !v.videoWidth) return;
+  if (t - lastLive < 120) return; lastLive = t;
+  const sc = 640 / Math.max(v.videoWidth, v.videoHeight);
+  const w = Math.round(v.videoWidth * sc), h = Math.round(v.videoHeight * sc);
+  liveCanvas.width = w; liveCanvas.height = h;
+  const ctx = liveCanvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(v, 0, 0, w, h);
+  const r = PK.analyze(PK.toGray(ctx.getImageData(0, 0, w, h).data, w, h), w, h, { checkSharp: false });
+  setStatus(r);
+}
+function setStatus(r) {
+  const cam = $('#cam'), dot = $('#dot');
+  if (cam) cam.className = 'cam ' + r.status;
+  if (dot) dot.className = 'dot ' + r.status;
+  const t = $('#st-title'), m = $('#st-msg');
+  if (t) t.textContent = { red: 'AJUSTE O ENQUADRAMENTO', yellow: 'QUASE LÁ', green: 'REFERÊNCIAS RECONHECIDAS' }[r.status];
+  if (m) m.textContent = r.messages[0] || '';
+}
+function captureFromVideo() {
+  const v = $('#video'); if (!v || !v.videoWidth) return pickFile(true);
+  const c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight;
+  c.getContext('2d').drawImage(v, 0, 0);
+  stopCam(); processSource(c, c.width, c.height);
+}
+function pickFile(capture) {
+  const f = $('#filecam');
+  if (capture) f.setAttribute('capture', 'environment'); else f.removeAttribute('capture');
+  f.value = ''; f.click();
+}
+$('#filecam').addEventListener('change', e => {
+  const file = e.target.files && e.target.files[0]; if (!file) return;
+  const img = new Image(); const url = URL.createObjectURL(file);
+  img.onload = () => { stopCam(); processSource(img, img.naturalWidth, img.naturalHeight); URL.revokeObjectURL(url); };
+  img.onerror = () => alertMsg('Não foi possível abrir esta imagem.');
+  img.src = url;
+});
+function alertMsg(t) { view.insertAdjacentHTML('afterbegin', `<ul class="msgs"><li class="bad">${esc(t)}</li></ul>`); }
+
+// ---------- 3. análise da foto ----------
+function readQR(canvas, r) {
+  if (typeof jsQR !== 'function' || !r.Hinv) return undefined;
+  const q = PK.RULER.qr, m = 6;
+  const pts = [[q.x - m, q.y - m], [q.x + q.size + m, q.y - m], [q.x + q.size + m, q.y + q.size + m], [q.x - m, q.y + q.size + m]].map(p => PK.toPx(r, p[0], p[1]));
+  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+  const x0 = Math.max(0, Math.floor(Math.min(...xs))), y0 = Math.max(0, Math.floor(Math.min(...ys)));
+  const x1 = Math.min(canvas.width, Math.ceil(Math.max(...xs))), y1 = Math.min(canvas.height, Math.ceil(Math.max(...ys)));
+  if (x1 - x0 < 20 || y1 - y0 < 20) return false;
+  try {
+    const d = canvas.getContext('2d').getImageData(x0, y0, x1 - x0, y1 - y0);
+    const res = jsQR(d.data, d.width, d.height, { inversionAttempts: 'dontInvert' });
+    return res ? res.data : false;
+  } catch (e) { return undefined; }
+}
+function processSource(src, sw, sh) {
+  const sc = Math.min(1, 1600 / Math.max(sw, sh));
+  const w = Math.round(sw * sc), h = Math.round(sh * sc);
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(src, 0, 0, w, h);
+  const g = PK.toGray(ctx.getImageData(0, 0, w, h).data, w, h);
+  let r = PK.analyze(g, w, h);
+  let qr;
+  if (r.H) {
+    qr = readQR(c, r);
+    if (qr !== undefined) r = PK.analyze(g, w, h, { qrOk: qr === PK.RULER.code });
+    if (typeof qr === 'string' && qr !== PK.RULER.code) r.messages.unshift('QR lido, mas a régua não está cadastrada neste torneio.');
+  }
+  r.qr = qr;
+  const R = PK.RULER;
+  S.shot = { canvas: c, res: r, snout: null, tail: null, at: new Date().toISOString() };
+  if (r.H) {
+    S.shot.snout = PK.toPx(r, 0, 45);
+    S.shot.tail = PK.toPx(r, Math.min(R.scaleMm * 0.6, 150), 45);
+  }
+  S.tab = 'medir'; S.step = 'review'; render(); window.scrollTo(0, 0);
+}
+
+// ---------- 4. revisão e medida ----------
+function measure() {
+  const sh = S.shot, r = sh.res;
+  if (!r.H) return null;
+  const t = PK.toMm(r, sh.tail[0], sh.tail[1]), s = PK.toMm(r, sh.snout[0], sh.snout[1]);
+  return { mm: t[0], snoutMm: s[0], unc: r.uncertaintyMm };
+}
+function renderReview() {
+  const sh = S.shot, r = sh.res;
+  const titles = { red: 'REFAZER A FOTO', yellow: 'FOTO COM RESSALVAS', green: 'FOTO ADEQUADA' };
+  view.innerHTML = `
+  <div class="eyebrow">Passo 3 · Confira a medida</div>
+  <h1>${r.H ? 'Arraste o ponto verde até a ponta da cauda.' : 'Não deu para medir esta foto.'}</h1>
+  <p class="lead">${r.H ? 'Use a lupa para acertar a ponta válida da cauda, conforme o regulamento. O ponto branco marca o focinho.' : 'O app não encontrou as referências da régua. Tire outra foto seguindo as dicas abaixo.'}</p>
+  <div class="stage" id="stage"></div>
+  <div class="statusbar"><div class="dot ${r.status}"></div><div><b>${titles[r.status]}</b><span>${r.markers.length} de 4 marcadores · QR ${r.qr === PK.RULER.code ? 'reconhecido' : r.qr === undefined ? 'não verificado' : 'não lido'}</span></div></div>
+  <div id="measure-box"></div>
+  <ul class="msgs" id="msgs"></ul>
+  <div class="row" style="margin-top:16px">
+    <button class="btn ghost" id="btn-retake">Refazer foto</button>
+    <button class="btn primary" id="btn-send" ${r.H ? '' : 'disabled'}>Registrar</button>
+  </div>
+  <p class="note" style="margin-top:12px">Medida estimada para teste. A validação oficial segue sempre as regras do torneio.</p>`;
+  const stage = $('#stage');
+  const cv = document.createElement("canvas"); cv.className = "photo"; cv.width = sh.canvas.width; cv.height = sh.canvas.height;
+  stage.appendChild(cv);
+  drawOverlay(cv);
+  $('#btn-retake').onclick = () => { S.shot = null; go('medir', 'camera'); };
+  $('#btn-send').onclick = () => register();
+  if (r.H) {
+    addHandle(stage, cv, 'snout', 'FOCINHO');
+    addHandle(stage, cv, 'tail', 'CAUDA');
+  }
+  updateMeasure();
+}
+function drawOverlay(cv) {
+  const sh = S.shot, r = sh.res, ctx = cv.getContext('2d');
+  ctx.drawImage(sh.canvas, 0, 0);
+  const lw = Math.max(2, cv.width / 500);
+  ctx.lineWidth = lw;
+  for (const m of r.markers) {
+    ctx.strokeStyle = '#cfee6a'; ctx.beginPath();
+    m.corners.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.closePath(); ctx.stroke();
+  }
+  if (!r.H) return;
+  ctx.strokeStyle = { red: '#e06a60', yellow: '#d6a23f', green: '#cfee6a' }[r.status];
+  ctx.setLineDash([lw * 4, lw * 3]); ctx.beginPath();
+  r.rulerPoly.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
+  // linha do zero e linha de leitura da cauda
+  const z0 = PK.toPx(r, 0, 0), z1 = PK.toPx(r, 0, PK.RULER.height);
+  ctx.strokeStyle = '#ffffff'; ctx.beginPath(); ctx.moveTo(z0[0], z0[1]); ctx.lineTo(z1[0], z1[1]); ctx.stroke();
+  if (sh.tail) {
+    const t = PK.toMm(r, sh.tail[0], sh.tail[1]);
+    const a = PK.toPx(r, t[0], 0), b = PK.toPx(r, t[0], PK.RULER.height);
+    ctx.strokeStyle = '#cfee6a'; ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+  }
+}
+function addHandle(stage, cv, key, label) {
+  const h = document.createElement('div'); h.className = 'handle ' + key; h.setAttribute('role', 'slider'); h.setAttribute('aria-label', label); h.tabIndex = 0;
+  h.innerHTML = `<span class="lbl">${label}</span>`; stage.appendChild(h);
+  const loupe = document.createElement('canvas'); loupe.className = 'loupe'; loupe.width = 240; loupe.height = 240; loupe.hidden = true; stage.appendChild(loupe);
+  const place = () => {
+    const p = S.shot[key], k = cv.clientWidth / cv.width;
+    h.style.left = p[0] * k + 'px'; h.style.top = p[1] * k + 'px';
+  };
+  place(); window.addEventListener('resize', place);
+  let drag = null;
+  h.addEventListener('pointerdown', e => {
+    e.preventDefault(); h.setPointerCapture(e.pointerId);
+    const k = cv.clientWidth / cv.width;
+    drag = { sx: e.clientX, sy: e.clientY, px: S.shot[key][0], py: S.shot[key][1], k };
+    loupe.hidden = false; drawLoupe();
+  });
+  h.addEventListener('pointermove', e => {
+    if (!drag) return;
+    // movimento fino: o ponto anda 60% do dedo, para precisão
+    const f = 0.6 / drag.k;
+    S.shot[key] = [Math.max(0, Math.min(cv.width, drag.px + (e.clientX - drag.sx) * f)), Math.max(0, Math.min(cv.height, drag.py + (e.clientY - drag.sy) * f))];
+    place(); drawLoupe(); drawOverlay(cv); updateMeasure();
+  });
+  const end = () => { drag = null; loupe.hidden = true; };
+  h.addEventListener('pointerup', end); h.addEventListener('pointercancel', end);
+  h.addEventListener('keydown', e => {
+    const d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key]; if (!d) return;
+    e.preventDefault(); S.shot[key] = [S.shot[key][0] + d[0], S.shot[key][1] + d[1]]; place(); drawOverlay(cv); updateMeasure();
+  });
+  function drawLoupe() {
+    const p = S.shot[key], k = cv.clientWidth / cv.width, z = 3.2, L = loupe.width;
+    const lx = p[0] * k, ly = p[1] * k;
+    loupe.style.left = Math.min(Math.max(0, lx - 60), cv.clientWidth - 120) + 'px';
+    loupe.style.top = (ly > 150 ? ly - 150 : ly + 40) + 'px';
+    const ctx = loupe.getContext('2d'), src = L / (z * k * 2);
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, L, L);
+    ctx.drawImage(S.shot.canvas, p[0] - src, p[1] - src, src * 2, src * 2, 0, 0, L, L);
+    ctx.strokeStyle = key === 'tail' ? '#cfee6a' : '#ffffff'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(L / 2, 0); ctx.lineTo(L / 2, L); ctx.moveTo(0, L / 2); ctx.lineTo(L, L / 2); ctx.stroke();
+  }
+}
+function updateMeasure() {
+  const box = $('#measure-box'), ul = $('#msgs'); if (!box) return;
+  const r = S.shot.res, m = measure();
+  box.innerHTML = m ? `<div class="measure"><div><div class="k">Medida estimada</div><div class="v">${Math.round(m.mm)} <small>mm</small></div></div><div class="u">± ${m.unc.toFixed(1)} mm<br>${(m.mm / 10).toFixed(1).replace('.', ',')} cm</div></div>` : '';
+  const items = [];
+  const cls = r.status === 'green' ? 'ok' : r.status === 'red' ? 'bad' : '';
+  r.messages.forEach(t => items.push(`<li class="${cls}">${esc(t)}</li>`));
+  if (m) {
+    if (Math.abs(m.snoutMm) > 4) items.push(`<li class="bad">Focinho a ${Math.abs(m.snoutMm).toFixed(0)} mm do zero. Encoste no batente ou ajuste o ponto branco.</li>`);
+    if (m.mm > PK.RULER.scaleMm) items.push(`<li class="bad">Cauda além da escala impressa (${PK.RULER.scaleMm / 10} cm).</li>`);
+    if (m.mm < 20) items.push(`<li>Arraste o ponto verde até a ponta da cauda.</li>`);
+  }
+  ul.innerHTML = items.join('');
+}
+function thumb(canvas) {
+  const sc = 640 / Math.max(canvas.width, canvas.height);
+  const c = document.createElement('canvas'); c.width = Math.round(canvas.width * sc); c.height = Math.round(canvas.height * sc);
+  c.getContext('2d').drawImage(canvas, 0, 0, c.width, c.height);
+  return c.toDataURL('image/jpeg', 0.72);
+}
+function register() {
+  const sh = S.shot, r = sh.res, m = measure(); if (!m) return;
+  const cv = $('#stage canvas.photo');
+  const cap = {
+    id: 'C' + Date.now().toString(36).toUpperCase(),
+    at: sh.at, torneio: S.torneio, especie: S.especie,
+    mm: Math.round(m.mm), unc: +m.unc.toFixed(1), snoutMm: +m.snoutMm.toFixed(1),
+    quality: r.status, markers: r.markers.length, qr: r.qr === PK.RULER.code, regua: PK.RULER.code.replace('PESKAR:', ''),
+    status: r.status === 'green' && Math.abs(m.snoutMm) <= 4 ? 'recebida' : 'revisao',
+    img: thumb(cv || sh.canvas)
+  };
+  memCaps.unshift(cap);
+  const ok = saveCaps(memCaps);
+  S.lastSaved = ok; S.lastCap = cap;
+  S.step = 'done'; render(); window.scrollTo(0, 0);
+}
+function renderDone() {
+  const c = S.lastCap;
+  view.innerHTML = `<div class="done">
+    <div class="ok">✓</div>
+    <div class="eyebrow">Captura registrada</div>
+    <h1>${c.mm} mm · ${esc(c.especie)}</h1>
+    <p class="lead">${c.status === 'recebida' ? 'Aguardando conferência conforme as regras do torneio.' : 'Enviada para revisão do juiz por causa das ressalvas da foto.'}</p>
+    <span class="chip ${c.status}">${STATUS[c.status]}</span>
+    ${S.lastSaved ? '' : '<p class="note">Sem espaço para guardar no aparelho: a captura fica só nesta sessão.</p>'}
+    <div class="row" style="margin-top:22px"><button class="btn ghost" id="btn-list">Ver capturas</button><button class="btn primary" id="btn-new">Nova captura</button></div>
+  </div>`;
+  $('#btn-list').onclick = () => { S.viewId = null; go('capturas'); };
+  $('#btn-new').onclick = () => { S.shot = null; go('medir', 'setup'); };
+}
+
+// ---------- capturas ----------
+function fmtDate(iso) { try { return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); } catch (e) { return iso; } }
+function renderList() {
+  const list = memCaps;
+  view.innerHTML = `<div class="eyebrow">Depois do envio</div><h1>Suas capturas</h1>
+  <p class="lead">Guardadas neste aparelho para o teste. Toque em uma para ver os detalhes.</p>
+  <div class="list">${list.length ? list.map(c => `
+    <button class="cap" data-id="${esc(c.id)}"><img alt="" src="${c.img}"><div>
+      <div class="t">${c.mm} mm</div><div class="s">${esc(c.especie)} · ${fmtDate(c.at)}</div><div class="s">${esc(c.torneio)}</div>
+      <span class="chip ${c.status}">${STATUS[c.status]}</span></div></button>`).join('') :
+    `<div class="empty panel"><h2>Nenhuma captura ainda</h2><p>Meça o primeiro peixe (ou um objeto de tamanho conhecido) na aba Medir.</p><button class="btn primary" id="btn-first">Medir captura</button></div>`}
+  </div>`;
+  view.querySelectorAll('.cap').forEach(b => b.onclick = () => { S.viewId = b.dataset.id; render(); window.scrollTo(0, 0); });
+  const f = $('#btn-first'); if (f) f.onclick = () => go('medir', 'setup');
+}
+function renderDetail() {
+  const c = memCaps.find(x => x.id === S.viewId); if (!c) { S.viewId = null; return renderList(); }
+  view.innerHTML = `<div class="detail">
+    <div class="eyebrow">Captura ${esc(c.id)}</div><h1>${c.mm} mm · ${esc(c.especie)}</h1>
+    <span class="chip ${c.status}">${STATUS[c.status]}</span>
+    <img alt="Foto da captura" src="${c.img}" style="margin-top:12px">
+    <dl class="kv">
+      <dt>Torneio</dt><dd>${esc(c.torneio)}</dd>
+      <dt>Data</dt><dd>${fmtDate(c.at)}</dd>
+      <dt>Medida</dt><dd>${c.mm} mm ± ${c.unc} mm</dd>
+      <dt>Focinho</dt><dd>${c.snoutMm >= 0 ? '+' : ''}${c.snoutMm} mm do zero</dd>
+      <dt>Foto</dt><dd>${{ green: 'Adequada', yellow: 'Com ressalvas', red: 'Inadequada' }[c.quality]} · ${c.markers}/4 marcadores</dd>
+      <dt>Régua</dt><dd>${esc(c.regua)} · QR ${c.qr ? 'conferido' : 'não conferido'}</dd>
+    </dl>
+    <div class="panel stack"><div class="eyebrow">Simular arbitragem (teste)</div>
+      <div class="row">${Object.keys(STATUS).map(k => `<button class="btn ghost" data-st="${k}" ${k === c.status ? 'disabled' : ''}>${STATUS[k]}</button>`).join('')}</div></div>
+    <div class="row" style="margin-top:14px"><button class="btn ghost" id="btn-back">Voltar</button><button class="btn ghost" id="btn-del">Apagar</button></div>
+    <div id="confirm"></div>
+  </div>`;
+  view.querySelectorAll('[data-st]').forEach(b => b.onclick = () => { c.status = b.dataset.st; saveCaps(memCaps); renderDetail(); });
+  $('#btn-back').onclick = () => { S.viewId = null; renderList(); };
+  $('#btn-del').onclick = () => {
+    $('#confirm').innerHTML = `<div class="panel" style="margin-top:12px"><p>Apagar esta captura do aparelho?</p><div class="row"><button class="btn ghost" id="no">Cancelar</button><button class="btn primary" id="yes">Apagar</button></div></div>`;
+    $('#no').onclick = () => $('#confirm').innerHTML = '';
+    $('#yes').onclick = () => { memCaps = memCaps.filter(x => x.id !== c.id); saveCaps(memCaps); S.viewId = null; renderList(); };
+  };
+}
+
+// ---------- régua ----------
+function renderRuler() {
+  const R = PK.RULER;
+  view.innerHTML = `<div class="eyebrow">Antes de começar</div><h1>Régua de teste para imprimir</h1>
+  <p class="lead">Versão de bancada da Régua PESKAR 2.0, com escala de 0 a ${R.scaleMm / 10} cm, os 4 marcadores e o QR Code ${esc(R.code.replace('PESKAR:', ''))}.</p>
+  <div class="ruler-prev">${PK.rulerSVG(QR_GRID, { caption: true })}</div>
+  <div class="panel stack" style="margin-top:14px">
+    <ul class="checks">
+      <li>Imprima em A4 paisagem, escala 100% (desmarque "ajustar à página").</li>
+      <li>Meça a linha de conferência: precisa ter 10,0 cm.</li>
+      <li>Cole em papelão, MDF ou acrílico, bem plano.</li>
+      <li>Para testar a precisão, meça objetos de tamanho conhecido (uma folha A4 tem 297 mm).</li>
+    </ul>
+  </div>
+  <div class="row" style="margin-top:14px"><button class="btn primary" id="btn-svg">Baixar régua (SVG)</button></div>
+  <p class="note" id="dl-note" style="margin-top:10px">O PDF pronto para imprimir também foi enviado junto com o app.</p>`;
+  $('#btn-svg').onclick = downloadSVG;
+}
+async function downloadSVG() {
+  const data = PK.rulerSVG(QR_GRID, { caption: true });
+  const note = $('#dl-note');
+  try {
+    const dl = window.claude && window.claude.use ? await window.claude.use('downloads') : null;
+    if (dl) { await dl.save({ filename: 'regua-peskar-teste.svg', data }); return; }
+  } catch (e) { if (note) note.textContent = 'Download cancelado.'; return; }
+  try {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([data], { type: 'image/svg+xml' }));
+    a.download = 'regua-peskar-teste.svg'; document.body.appendChild(a); a.click(); a.remove();
+  } catch (e) { if (note) note.textContent = 'Não foi possível baixar aqui. Use o PDF enviado junto com o app.'; }
+}
+
+render();
+</script>
+</body></html>
