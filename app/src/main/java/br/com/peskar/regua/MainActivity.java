@@ -36,11 +36,11 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        getWindow().setStatusBarColor(Color.parseColor("#0d1a15"));
-        getWindow().setNavigationBarColor(Color.parseColor("#16302a"));
+        getWindow().setStatusBarColor(Color.parseColor("#0a1226"));
+        getWindow().setNavigationBarColor(Color.parseColor("#111c37"));
 
         webView = new WebView(this);
-        webView.setBackgroundColor(Color.parseColor("#0d1a15"));
+        webView.setBackgroundColor(Color.parseColor("#0a1226"));
         setContentView(webView);
 
         final WebViewAssetLoader loader = new WebViewAssetLoader.Builder()
