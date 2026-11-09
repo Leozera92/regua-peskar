@@ -7,6 +7,7 @@ import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.provider.MediaStore;
 import android.webkit.PermissionRequest;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -16,7 +17,10 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
+import androidx.core.content.FileProvider;
 import androidx.webkit.WebViewAssetLoader;
+
+import java.io.File;
 
 /**
  * PESKAR Régua 2.0 — casca Android.
@@ -27,11 +31,14 @@ public class MainActivity extends Activity {
 
     private static final int REQ_CAMERA = 10;
     private static final int REQ_FILE = 11;
+    private static final int REQ_CAMERA_PHOTO = 12;
     private static final String START_URL = "https://appassets.androidplatform.net/assets/index.html";
 
     private WebView webView;
     private PermissionRequest pendingPermission;
     private ValueCallback<Uri[]> fileCallback;
+    private Uri cameraUri;
+    private boolean pendingCapture;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -86,21 +93,57 @@ public class MainActivity extends Activity {
             public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
                 if (fileCallback != null) fileCallback.onReceiveValue(null);
                 fileCallback = callback;
-                try {
-                    Intent pick = new Intent(Intent.ACTION_GET_CONTENT);
-                    pick.addCategory(Intent.CATEGORY_OPENABLE);
-                    pick.setType("image/*");
-                    startActivityForResult(Intent.createChooser(pick, "Escolha a foto"), REQ_FILE);
-                } catch (Exception e) {
-                    fileCallback = null;
-                    return false;
+                boolean capture = params != null && params.isCaptureEnabled();
+                if (capture && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                    pendingCapture = true;
+                    requestPermissions(new String[]{Manifest.permission.CAMERA}, REQ_CAMERA_PHOTO);
+                    return true;
                 }
-                return true;
+                return openChooser(capture);
             }
         });
 
         if (savedInstanceState != null) webView.restoreState(savedInstanceState);
         else webView.loadUrl(START_URL);
+    }
+
+    /** Câmera nativa (foto em resolução máxima) e, se não for captura direta, também a galeria. */
+    private Intent cameraIntent() {
+        if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) return null;
+        try {
+            File dir = new File(getCacheDir(), "fotos");
+            if (!dir.exists()) dir.mkdirs();
+            File f = new File(dir, "captura_" + System.currentTimeMillis() + ".jpg");
+            cameraUri = FileProvider.getUriForFile(this, getPackageName() + ".fotos", f);
+            Intent cam = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+            cam.putExtra(MediaStore.EXTRA_OUTPUT, cameraUri);
+            cam.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            return cam;
+        } catch (Exception e) {
+            cameraUri = null;
+            return null;
+        }
+    }
+
+    private boolean openChooser(boolean capture) {
+        try {
+            Intent cam = cameraIntent();
+            if (capture && cam != null) {
+                startActivityForResult(cam, REQ_FILE);
+                return true;
+            }
+            Intent pick = new Intent(Intent.ACTION_GET_CONTENT);
+            pick.addCategory(Intent.CATEGORY_OPENABLE);
+            pick.setType("image/*");
+            Intent chooser = Intent.createChooser(pick, "Escolha a foto");
+            if (cam != null) chooser.putExtra(Intent.EXTRA_INITIAL_INTENTS, new Intent[]{cam});
+            startActivityForResult(chooser, REQ_FILE);
+            return true;
+        } catch (Exception e) {
+            if (fileCallback != null) fileCallback.onReceiveValue(null);
+            fileCallback = null;
+            return false;
+        }
     }
 
     @Override
@@ -114,6 +157,10 @@ public class MainActivity extends Activity {
             }
             pendingPermission = null;
         }
+        if (requestCode == REQ_CAMERA_PHOTO && pendingCapture) {
+            pendingCapture = false;
+            openChooser(true);
+        }
     }
 
     @Override
@@ -121,9 +168,11 @@ public class MainActivity extends Activity {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == REQ_FILE && fileCallback != null) {
             Uri[] result = null;
-            if (resultCode == RESULT_OK && data != null && data.getData() != null) {
-                result = new Uri[]{data.getData()};
+            if (resultCode == RESULT_OK) {
+                if (data != null && data.getData() != null) result = new Uri[]{data.getData()};
+                else if (cameraUri != null) result = new Uri[]{cameraUri};
             }
+            cameraUri = null;
             fileCallback.onReceiveValue(result);
             fileCallback = null;
         }
