@@ -340,6 +340,12 @@ nav.tabs .measure-tab[aria-current="page"] .ring{background:var(--gold2)}
   };
   PK.SIZES = [500, 700, 900, 1100];
   PK.model = function (family, L) {
+    if (family === 'A4') return {
+      family: 'A4', name: 'Régua A4 (25 cm)', scaleMm: 250, height: 108, centerLine: 54,
+      board: { x0: -20, y0: -46, x1: 272, y1: 156 }, marker: 30,
+      markers: [[6, 20, -24], [7, 230, -24], [8, 20, 132], [9, 230, 132]].map(([id, cx, cy]) => ({ id, x: cx - 15, y: cy - 15, s: 30 })),
+      qr: null
+    };
     if (family === 'R2') return {
       family: 'R2', name: 'Régua 1 m (modelo antigo)', scaleMm: 1000, height: 196, centerLine: 105.5,
       board: { x0: -60, y0: -70, x1: 1060, y1: 250 }, marker: 36,
@@ -359,6 +365,7 @@ nav.tabs .measure-tab[aria-current="page"] .ring{background:var(--gold2)}
   PK.markerGeom = function (id) {
     const S = PK.STD;
     if (id >= 0 && id <= 5) return PK.model('R2').markers[id];
+    if (id >= 6 && id <= 9) return PK.model('A4').markers[id - 6];
     if (id >= S.idTop && id < S.idBot) return { id, x: (id - S.idTop) * S.step - S.marker / 2, y: S.topY - S.marker / 2, s: S.marker };
     if (id >= S.idBot && id < 50) return { id, x: (id - S.idBot) * S.step - S.marker / 2, y: S.botY - S.marker / 2, s: S.marker };
     return null;
@@ -366,6 +373,7 @@ nav.tabs .measure-tab[aria-current="page"] .ring{background:var(--gold2)}
   PK.parseCode = function (txt) {
     const m = /^PESKAR:R3-(\d+)-/.exec(txt || ''); if (m) return { family: 'R3', L: +m[1] * 10 };
     if (/^PESKAR:R2-1M-/.test(txt || '')) return { family: 'R2', L: 1000 };
+    if (/^PESKAR:A4-/.test(txt || '')) return { family: 'A4', L: 250 };
     return null;
   };
   PK.RULER = PK.model('R3', 1000);   // modelo padrão até a foto dizer qual é
@@ -731,9 +739,9 @@ nav.tabs .measure-tab[aria-current="page"] .ring{background:var(--gold2)}
     opts = opts || {};
     let markers = PK.detectAll(g, w, h, Object.assign({}, opts, { expect: opts.expect || (opts.lengthMm ? PK.model('R3', opts.lengthMm).markers.length : 6) }));
     // família da régua: padrão R3 (ids 10-49) ou modelo antigo R2 (ids 0-5)
-    const r3 = markers.filter(m => m.id >= 10), r2 = markers.filter(m => m.id <= 5);
-    const family = opts.family || (r2.length > r3.length ? 'R2' : 'R3');
-    markers = family === 'R2' ? r2 : r3;
+    const fam = { R3: markers.filter(m => m.id >= 10), R2: markers.filter(m => m.id <= 5), A4: markers.filter(m => m.id >= 6 && m.id <= 9) };
+    const family = opts.family || Object.keys(fam).sort((a, b) => fam[b].length - fam[a].length)[0];
+    markers = fam[family];
     let L = opts.lengthMm;
     if (family === 'R3') {
       const seen = markers.map(m => (m.id - (m.id >= PK.STD.idBot ? PK.STD.idBot : PK.STD.idTop)) * PK.STD.step);
@@ -1019,7 +1027,7 @@ function renderTorneio(t) {
   <div class="section"><h2>Regras principais</h2>
     <div class="panel"><ul class="rules">
       <li>Pontuação: soma, em centímetros, dos 3 maiores ${esc(t.especie.toLowerCase())}s de cada pescador.</li>
-      <li>Medição obrigatória com a Régua PESKAR oficial (50, 70, 90 ou 110 cm), focinho no batente e boca fechada.</li>
+      <li>Medição obrigatória com a Régua PESKAR oficial (50, 70, 90 ou 110 cm; a A4 é só para treino), focinho no batente e boca fechada.</li>
       <li>Foto de cima com todos os quadrados de referência da régua visíveis.</li>
       <li>Cada captura passa pela validação do juiz antes de entrar no ranking.</li>
       <li>Pesque e solte: o peixe volta vivo para a água.</li>
@@ -1173,7 +1181,7 @@ function renderMedir() {
       <select id="m-t">${comp.map(c => `<option value="${c.id}" ${c.id === S.medirT ? 'selected' : ''}>${esc(c.nome)} (ao vivo)</option>`).join('')}<option value="" ${!S.medirT ? 'selected' : ''}>Treino livre (não vale para ranking)</option></select></div>
     ${liveNot.map(l => `<div class="panel" style="display:flex;gap:12px;align-items:center"><span class="chip live">Ao vivo</span><div style="flex:1;min-width:0;font-size:13.5px">Inscreva-se em <b>${esc(l.nome)}</b> para postar no ranking.</div><button class="btn gold sm" data-go="inscricao-${l.id}">Inscrever</button></div>`).join('')}
     <div class="field"><label for="m-regua">Régua</label>
-      <select id="m-regua">${[['', 'Reconhecer automaticamente'], ['500', 'Régua 50 cm'], ['700', 'Régua 70 cm'], ['900', 'Régua 90 cm'], ['1100', 'Régua 110 cm'], ['R2', 'Régua 1 m (modelo antigo)']].map(([v, l]) => `<option value="${v}" ${String(store.get('regua', '')) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      <select id="m-regua">${[['', 'Reconhecer automaticamente'], ['500', 'Régua 50 cm'], ['700', 'Régua 70 cm'], ['900', 'Régua 90 cm'], ['1100', 'Régua 110 cm'], ['A4', 'Régua A4 (25 cm)'], ['R2', 'Régua 1 m (modelo antigo)']].map(([v, l]) => `<option value="${v}" ${String(store.get('regua', '')) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
     <div class="field"><label for="m-esp">Espécie</label>
       <select id="m-esp" ${t ? 'disabled' : ''}>${ESP.map(e => `<option ${e === (t ? t.especie : S.especie) ? 'selected' : ''}>${e}</option>`).join('')}</select></div>
     <div class="panel"><ul class="checks">
@@ -1194,10 +1202,10 @@ function renderMedir() {
   view.querySelectorAll('[data-go]').forEach(b => b.onclick = () => go(b.dataset.go));
 }
 // régua escolhida: número (mm) do padrão R3, 'R2' (1 m antiga) ou '' (automático)
-function rulerL() { const v = store.get('regua', ''); return v === 'R2' ? 'R2' : (+v || ''); }
+function rulerL() { const v = store.get('regua', ''); return v === 'R2' || v === 'A4' ? v : (+v || ''); }
 function rulerOpts(extra) {
   const v = rulerL(), o = Object.assign({}, extra || {});
-  if (v === 'R2') o.family = 'R2'; else if (v) { o.family = 'R3'; o.lengthMm = v; }
+  if (v === 'R2' || v === 'A4') o.family = v; else if (v) { o.family = 'R3'; o.lengthMm = v; }
   return o;
 }
 function camAvailable() { return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia); }
@@ -1241,7 +1249,7 @@ function drawHud(res, aw, ah) {
   const dpr = window.devicePixelRatio || 1;
   if (cv.width !== Math.round(W * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
   const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
-  const Lg = rulerL() || S.lastL || 900, ratio = rulerL() === 'R2' ? 320 / 1120 : 250 / ((typeof Lg === 'number' ? Lg : 1000) + 120);
+  const Lg = rulerL() || S.lastL || 900, ratio = rulerL() === 'R2' ? 320 / 1120 : rulerL() === 'A4' || S.lastFam === 'A4' ? 210 / 297 : 250 / ((typeof Lg === 'number' ? Lg : 1000) + 120);
   const portrait = H >= W;
   let gw, gh;
   if (portrait) { gh = H * 0.92; gw = gh * ratio; if (gw > W * 0.9) { gw = W * 0.9; gh = gw / ratio; } }
@@ -1280,7 +1288,7 @@ function liveLoop(ts) {
   const ctx = liveCanvas.getContext('2d', { willReadFrequently: true });
   ctx.drawImage(v, 0, 0, w, h);
   const r = PK.analyze(PK.toGray(ctx.getImageData(0, 0, w, h).data, w, h), w, h, rulerOpts({ checkSharp: false, maxUp: 2000 }));
-  if (r.H && r.family === 'R3') S.lastL = r.ruler.scaleMm;
+  if (r.H) { S.lastFam = r.family; if (r.family === 'R3') S.lastL = r.ruler.scaleMm; }
   setStatus(r); drawHud(r, w, h);
   const n = r.expected || r.ruler.markers.length, c = $('#count'), hint = $('#hint');
   if (c) c.textContent = r.markers.length + '/' + n;
@@ -1494,7 +1502,7 @@ function renderPerfil() {
   <div class="section"><h2>Réguas PESKAR</h2>
     <div class="ruler-img"><img alt="Régua PESKAR de 110 cm" src="${RULER_IMG}"></div>
     <div class="panel"><ul class="checks">
-      <li>Tamanhos oficiais: 50, 70, 90 e 110 cm, todas com 25 cm de altura. O app reconhece o tamanho sozinho.</li>
+      <li>Tamanhos oficiais: 50, 70, 90 e 110 cm (25 cm de altura) e a régua A4 de 25 cm para imprimir em casa. O app reconhece o modelo sozinho.</li>
       <li>Imprima em escala 100% e confira com trena do 0 ao fim da escala (±2 mm).</li>
       <li>Todos os quadrados precisam ficar visíveis, planos e sem dobras.</li>
       <li>A régua de 1 m antiga continua valendo.</li>
