@@ -10,8 +10,8 @@ android {
         applicationId 'br.com.peskar.regua'
         minSdk 26
         targetSdk 35
-        versionCode 5
-        versionName '0.5-reguas'
+        versionCode 6
+        versionName '0.6-a4'
     }
 
     // Chave fixa de teste: permite instalar versões novas por cima, sem desinstalar.
