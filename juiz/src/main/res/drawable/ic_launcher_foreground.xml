@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <group android:translateX="-3" android:translateY="6" android:scaleX="0.94" android:scaleY="0.94">
+        <path android:fillColor="#FFFFFF" android:pathData="M39.5,41 L42.6,34 L45.8,38.2 L49.4,32.6 L52.4,37.2 C56,32.6 62,30.8 66.6,32.8 C69.8,34.3 70.4,39 68.8,43.4 C60,39 50,38.6 39.5,41 Z" />
+        <path android:fillColor="#FFFFFF" android:pathData="M23,52 C27,43 39,37.5 53,37.5 C63,37.5 70,41.5 74.5,48.5 C77,45 80.5,41.5 84,40.5 C86.6,39.8 88,42 87.6,45 L86.8,52 L87.6,59 C88,62 86.6,64.2 84,63.5 C80.5,62.5 77,59 74.5,55.5 C70,62.5 63,66.5 53,66.5 C39,66.5 27,61 23,52 Z" />
+        <path android:strokeColor="#0B4423" android:strokeWidth="1" android:strokeLineCap="round" android:strokeLineJoin="round" android:strokeAlpha="0.55" android:pathData="M39.5,41 C50,38.6 60,39 68.8,43.4" />
+        <path android:fillColor="#0B4423" android:fillAlpha="0.18" android:pathData="M38,55 C42,52 47,52.5 49,55.5 C45,58.5 41,58.5 38,55 Z" />
+        <path android:fillColor="#0B4423" android:pathData="M29.4,48.4 a2.6,2.6 0 1 0 5.2,0 a2.6,2.6 0 1 0 -5.2,0 z" />
+        <path android:fillColor="#A6E22E" android:pathData="M73.4,52 a3.8,3.8 0 1 0 7.6,0 a3.8,3.8 0 1 0 -7.6,0 z" />
+        <path android:fillColor="#0B4423" android:pathData="M75.7,52 a1.5,1.5 0 1 0 3.0,0 a1.5,1.5 0 1 0 -3.0,0 z" />
+        <path android:strokeColor="#0B4423" android:strokeWidth="1.2" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M23,52 L29.5,53.6" />
+    </group>
+    <group>
+        <path android:fillColor="#A6E22E" android:pathData="M66.5,33 a10.5,10.5 0 1 0 21.0,0 a10.5,10.5 0 1 0 -21.0,0 z" />
+        <path android:strokeColor="#06301A" android:strokeWidth="3" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M71.6,33.4 L75.4,37.2 L82.6,29.6" />
+    </group>
+</vector>
