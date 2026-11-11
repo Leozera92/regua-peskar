@@ -50,6 +50,7 @@ public class MainActivity extends Activity {
     private boolean pendingCapture;
     private String pendingGeoOrigin;
     private GeolocationPermissions.Callback pendingGeoCallback;
+    private volatile String pendingText;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -130,6 +131,25 @@ public class MainActivity extends Activity {
 
         if (savedInstanceState != null) webView.restoreState(savedInstanceState);
         else webView.loadUrl(START_URL);
+        handleIntent(getIntent());
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleIntent(intent);
+    }
+
+    /** Mensagem do juiz compartilhada pelo WhatsApp/Telegram (texto com o código PESKAR1...). */
+    private void handleIntent(Intent intent) {
+        if (intent == null || !Intent.ACTION_SEND.equals(intent.getAction())) return;
+        String type = intent.getType();
+        if (type == null || !type.startsWith("text/")) return;
+        CharSequence t = intent.getCharSequenceExtra(Intent.EXTRA_TEXT);
+        if (t == null) return;
+        pendingText = t.toString();
+        if (webView != null) webView.evaluateJavascript("window.onTextoRecebido && window.onTextoRecebido()", null);
     }
 
     /** Câmera nativa (foto em resolução máxima) e, se não for captura direta, também a galeria. */
@@ -264,23 +284,47 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void share(String namesJson, String title) {
+            shareText(namesJson, title, null);
+        }
+
+        @JavascriptInterface
+        public void shareText(String namesJson, String title, String text) {
             try {
                 JSONArray names = new JSONArray(namesJson);
                 final ArrayList<Uri> uris = new ArrayList<>();
+                boolean allZip = names.length() > 0;
                 for (int i = 0; i < names.length(); i++) {
-                    File f = new File(exportDir(), new File(names.getString(i)).getName());
+                    String n = new File(names.getString(i)).getName();
+                    if (!n.toLowerCase().endsWith(".zip")) allZip = false;
+                    File f = new File(exportDir(), n);
                     if (f.exists()) uris.add(FileProvider.getUriForFile(MainActivity.this, getPackageName() + ".fotos", f));
                 }
                 final String t = title;
+                final String body = text;
+                final String mime = allZip ? "application/zip" : "*/*";
                 runOnUiThread(() -> {
-                    Intent send = new Intent(Intent.ACTION_SEND_MULTIPLE);
-                    send.setType("*/*");
-                    send.putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris);
+                    Intent send;
+                    if (uris.size() == 1) {
+                        send = new Intent(Intent.ACTION_SEND);
+                        send.putExtra(Intent.EXTRA_STREAM, uris.get(0));
+                    } else {
+                        send = new Intent(Intent.ACTION_SEND_MULTIPLE);
+                        send.putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris);
+                    }
+                    send.setType(mime);
                     send.putExtra(Intent.EXTRA_SUBJECT, t);
+                    if (body != null) send.putExtra(Intent.EXTRA_TEXT, body);
                     send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                     try { startActivity(Intent.createChooser(send, t)); } catch (Exception ignored) { }
                 });
             } catch (Exception ignored) { }
+        }
+
+        @JavascriptInterface
+        public String pendingText() {
+            String t = pendingText;
+            pendingText = null;
+            return t;
         }
 
         @JavascriptInterface
