@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0a3f20">
+<title>PESKAR Juiz</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@400;500;600;700&display=swap">
+<style>
+/* App do juiz: caixa de entrada de capturas recebidas por WhatsApp/Telegram, conferência e decisão.
+   Mesma paleta do app do pescador, com cabeçalho verde-escuro para diferenciar. */
+:root{
+  --bg:#f3f7f1; --surface:#fff; --surface2:#e8f1e3; --line:#d3e2cc;
+  --fg:#0f2b1b; --muted:#5d7566; --green:#1e9e4a; --green2:#137a37; --deep:#0f5a2e; --deep2:#0a3f20;
+  --ok:#1e9e4a; --warn:#e8a317; --bad:#d93a35; --lime:#8ed12e; --medal:#e7b21f;
+  --display:"Barlow Condensed","Arial Narrow",Roboto,Arial,sans-serif;
+  --body:"Barlow",Roboto,"Segoe UI",Helvetica,Arial,sans-serif;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:15px;line-height:1.45;-webkit-tap-highlight-color:transparent}
+button,input,select,textarea{font:inherit;color:inherit}
+header.top{position:sticky;top:0;z-index:20;background:var(--deep2);color:#fff;display:flex;align-items:center;gap:12px;padding:12px 16px}
+.brand{font-family:var(--display);font-weight:800;font-style:italic;letter-spacing:.08em;font-size:22px;line-height:1}
+.brand small{display:block;font-style:normal;font-size:10.5px;letter-spacing:.24em;color:var(--lime);font-weight:700;margin-top:2px}
+.juizname{margin-left:auto;font-size:12px;font-weight:700;background:rgba(255,255,255,.12);border-radius:999px;padding:6px 10px;border:0;cursor:pointer}
+main{padding:16px 16px calc(90px + env(safe-area-inset-bottom,0px));max-width:760px;margin:0 auto}
+h1{font-family:var(--display);font-weight:800;font-size:28px;line-height:1.05;margin:4px 0 6px}
+h2{font-family:var(--display);font-weight:800;font-size:20px;margin:0}
+h3{font-family:var(--display);font-weight:700;font-size:17px;margin:0 0 8px;letter-spacing:.02em}
+.eyebrow{font-family:var(--display);font-size:13px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--green)}
+.lead{color:var(--muted);margin:0 0 14px}
+.note{color:var(--muted);font-size:13px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px}
+.stack{display:flex;flex-direction:column;gap:12px}
+.row{display:flex;gap:10px}
+.row>*{flex:1}
+.btn{border:0;border-radius:12px;padding:13px 14px;font-family:var(--display);font-weight:800;font-size:17px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;min-height:48px}
+.btn.green{background:var(--green);color:#fff}
+.btn.ghost{background:var(--surface);border:1px solid var(--line)}
+.btn.bad{background:var(--bad);color:#fff}
+.btn.warn{background:var(--warn);color:#2b1d00}
+.btn:disabled{opacity:.45}
+.btn.small{min-height:38px;padding:8px 10px;font-size:14px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font-size:11.5px;font-weight:700;border-radius:999px;padding:3px 9px;background:var(--surface2);color:var(--deep);white-space:nowrap}
+.chip.ok{background:#dcf3e3;color:#11612d}.chip.warn{background:#fdf0d2;color:#7a5200}.chip.bad{background:#fbe0df;color:#8f1d1a}.chip.pend{background:#e5ecf6;color:#24426b}
+.tabs{display:flex;gap:6px;margin:4px 0 14px;overflow-x:auto}
+.tabs button{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:7px 12px;font-weight:700;font-size:13px;white-space:nowrap;cursor:pointer}
+.tabs button.on{background:var(--deep);color:#fff;border-color:var(--deep)}
+.card{display:flex;gap:12px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px;cursor:pointer;text-align:left;width:100%}
+.card img,.card .noimg{width:86px;height:64px;object-fit:cover;border-radius:8px;background:#203a2a;flex:none}
+.card .t{flex:1;min-width:0}
+.card .t b{font-family:var(--display);font-size:19px}
+.card .t .sub{color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.big{font-family:var(--display);font-weight:800;font-size:44px;line-height:1}
+.big small{font-size:20px;color:var(--muted)}
+video,.photo{width:100%;border-radius:12px;background:#000;display:block}
+.photo{cursor:zoom-in}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:14px}
+.kv dt{color:var(--muted)}.kv dd{margin:0;font-weight:600;overflow-wrap:anywhere}
+.auto{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.auto li{display:flex;gap:10px;align-items:flex-start;font-size:14px}
+.auto li i{flex:none;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-style:normal;font-weight:800;font-size:13px;color:#fff}
+.auto li.ok i{background:var(--ok)}.auto li.warn i{background:var(--warn)}.auto li.bad i{background:var(--bad)}.auto li.info i{background:#7b8f84}
+.auto li span b{display:block}
+label.check{display:flex;gap:10px;align-items:flex-start;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface);cursor:pointer}
+label.check input{width:22px;height:22px;flex:none;accent-color:var(--green);margin:0}
+input[type=number],input[type=text],select,textarea{width:100%;border:1px solid var(--line);border-radius:10px;padding:11px;background:#fff}
+.drop{border:2px dashed var(--line);border-radius:14px;padding:18px;text-align:center;background:var(--surface)}
+.empty{text-align:center;color:var(--muted);padding:26px 10px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{padding:8px 6px;border-bottom:1px solid var(--line);text-align:left}
+th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.pos{font-family:var(--display);font-weight:800;font-size:18px}
+nav.bottom{position:fixed;left:0;right:0;bottom:0;background:var(--surface);border-top:1px solid var(--line);display:flex;padding-bottom:env(safe-area-inset-bottom,0px);z-index:20}
+nav.bottom button{flex:1;border:0;background:none;padding:10px 4px 12px;font-family:var(--display);font-weight:700;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px}
+nav.bottom button.on{color:var(--deep)}
+nav.bottom svg{width:22px;height:22px}
+.badge{background:var(--bad);color:#fff;border-radius:999px;font-size:11px;padding:0 6px;margin-left:4px}
+.toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);background:var(--deep2);color:#fff;padding:10px 16px;border-radius:12px;font-weight:600;z-index:50;max-width:90vw;text-align:center}
+.zoom{position:fixed;inset:0;background:#000;z-index:60;overflow:auto;display:flex;align-items:flex-start;justify-content:center}
+.zoom img{width:200%;max-width:none}
+.zoom button{position:fixed;top:12px;right:12px;z-index:61}
+.vtools{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.decided{border-left:6px solid var(--ok)}.decided.bad{border-left-color:var(--bad)}.decided.warn{border-left-color:var(--warn)}
+</style>
+</head>
+<body>
+<header class="top"><div class="brand">PESKAR<small>JUIZ · REVISÃO</small></div><button class="juizname" id="btn-juiz"></button></header>
+<main id="view"></main>
+<nav class="bottom" id="nav">
+  <button data-tab="caixa"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 13h5l2 3h4l2-3h5"/><path d="M5 5h14l2 8v6H3v-6z"/></svg><span>Recebidas<span id="nb" class="badge" hidden></span></span></button>
+  <button data-tab="ranking"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 21V11M12 21V5M16 21v-7"/></svg><span>Ranking</span></button>
+  <button data-tab="ajuda"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .8-1 1.5V14M12 17.5v.01"/></svg><span>Como receber</span></button>
+</nav>
+<input type="file" id="file" multiple accept=".zip,application/zip,application/x-zip-compressed,application/json,.json,video/*,image/jpeg" hidden>
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const view = $('#view');
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const cmTxt = mm => (mm / 10).toFixed(1).replace('.', ',');
+const pad2 = n => String(n).padStart(2, '0');
+const fmtDT = iso => { if (!iso) return '–'; const d = new Date(iso); return isNaN(d) ? '–' : `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`; };
+const fmtDur = s => `${pad2(Math.floor(s / 60))}:${pad2(Math.round(s % 60))}`;
+const native = () => window.PeskarJuiz || null;
+function toast(msg, ms) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), ms || 2600); }
+function lsGet(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } }
+function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { } }
+
+// ---------- ARMAZENAMENTO (IndexedDB) ----------
+const DB = {
+  db: null,
+  open() { if (this.db) return Promise.resolve(this.db); return new Promise((ok, no) => { const r = indexedDB.open('peskar-juiz', 1); r.onupgradeneeded = () => { r.result.createObjectStore('caps'); r.result.createObjectStore('blobs'); }; r.onsuccess = () => { this.db = r.result; ok(this.db); }; r.onerror = () => no(r.error); }); },
+  async op(store, mode, fn) { const db = await this.open(); return new Promise((ok, no) => { const tx = db.transaction(store, mode); const st = tx.objectStore(store); const r = fn(st); tx.oncomplete = () => ok(r && r.result); tx.onerror = () => no(tx.error); }); },
+  get(store, k) { return this.op(store, 'readonly', s => s.get(k)); },
+  put(store, k, v) { return this.op(store, 'readwrite', s => s.put(v, k)); },
+  del(store, k) { return this.op(store, 'readwrite', s => s.delete(k)); },
+  all(store) { return this.op(store, 'readonly', s => s.getAll()); }
+};
+
+// ---------- ZIP (leitura) ----------
+async function inflateRaw(u8) {
+  if (typeof DecompressionStream === 'undefined') throw new Error('compactação não suportada');
+  const ds = new DecompressionStream('deflate-raw');
+  return new Uint8Array(await new Response(new Blob([u8]).stream().pipeThrough(ds)).arrayBuffer());
+}
+async function readZip(blob) {
+  const buf = new Uint8Array(await blob.arrayBuffer()), dv = new DataView(buf.buffer);
+  let e = -1;
+  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65557); i--) if (dv.getUint32(i, true) === 0x06054b50) { e = i; break; }
+  if (e < 0) throw new Error('não é um .zip válido');
+  const n = dv.getUint16(e + 10, true); let p = dv.getUint32(e + 16, true);
+  const out = [];
+  for (let k = 0; k < n; k++) {
+    if (dv.getUint32(p, true) !== 0x02014b50) break;
+    const method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true), nl = dv.getUint16(p + 28, true), xl = dv.getUint16(p + 30, true), cl = dv.getUint16(p + 32, true), lo = dv.getUint32(p + 42, true);
+    const name = new TextDecoder().decode(buf.subarray(p + 46, p + 46 + nl));
+    const lnl = dv.getUint16(lo + 26, true), lxl = dv.getUint16(lo + 28, true);
+    const start = lo + 30 + lnl + lxl; let data = buf.subarray(start, start + csize);
+    if (method === 8) data = await inflateRaw(data); else if (method !== 0) throw new Error('formato de compactação não suportado');
+    if (!name.endsWith('/')) out.push({ name: name.split('/').pop(), data });
+    p += 46 + nl + xl + cl;
+  }
+  return out;
+}
+async function sha256(blob) { const h = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()); return [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, '0')).join(''); }
+const mimeOf = n => /\.webm$/i.test(n) ? 'video/webm' : /\.mp4$/i.test(n) ? 'video/mp4' : /\.jpe?g$/i.test(n) ? 'image/jpeg' : /\.json$/i.test(n) ? 'application/json' : 'application/octet-stream';
+
+// ---------- IMPORTAÇÃO ----------
+// Aceita o .zip do app do pescador ou os arquivos soltos (vídeo + foto + dados.json) recebidos juntos.
+async function importFiles(list) {
+  const entries = [];
+  for (const f of list) {
+    try {
+      if (/\.zip$/i.test(f.name) || f.type === 'application/zip' || f.type === 'application/x-zip-compressed') {
+        for (const z of await readZip(f)) entries.push({ name: z.name, blob: new Blob([z.data], { type: mimeOf(z.name) }) });
+      } else entries.push({ name: f.name, blob: f });
+    } catch (e) { toast(`${f.name}: ${e.message}`, 4000); }
+  }
+  const jsons = entries.filter(e => /\.json$/i.test(e.name));
+  let novos = 0, repetidos = 0, invalidos = 0;
+  for (const j of jsons) {
+    let d; try { d = JSON.parse(await j.blob.text()); } catch (e) { invalidos++; continue; }
+    if (!d || d.formato !== 'peskar-captura/1' || !d.id) { invalidos++; continue; }
+    const byName = n => n && entries.find(e => e.name === n);
+    const vid = byName(d.arquivos && d.arquivos.video) || entries.find(e => /^video\//.test(e.blob.type) && e.name.includes(d.id));
+    const foto = byName(d.arquivos && d.arquivos.foto_medida) || entries.find(e => /\.jpe?g$/i.test(e.name) && e.name.includes(d.id));
+    const old = await DB.get('caps', d.id);
+    let integ = 'sem_video', hash = null;
+    if (vid) { hash = await sha256(vid.blob); integ = d.video && d.video.sha256 ? (hash === d.video.sha256 ? 'ok' : 'alterado') : 'sem_assinatura'; }
+    if (vid) await DB.put('blobs', d.id + ':video', vid.blob);
+    if (foto) await DB.put('blobs', d.id + ':foto', foto.blob);
+    const rec = Object.assign({}, old || {}, { id: d.id, dados: d, recebido_em: (old && old.recebido_em) || new Date().toISOString(), atualizado_em: new Date().toISOString(), integridade: vid ? integ : (old ? old.integridade : integ), sha_calc: hash || (old && old.sha_calc) || null, tem_video: !!vid || !!(old && old.tem_video), tem_foto: !!foto || !!(old && old.tem_foto) });
+    if (!rec.decisao) rec.decisao = null;
+    await DB.put('caps', d.id, rec);
+    old ? repetidos++ : novos++;
+  }
+  if (!jsons.length && entries.length) toast('Faltou o arquivo de dados (.json). Envie o pacote .zip completo.', 4500);
+  else if (novos || repetidos) toast(`${novos ? novos + ' captura(s) nova(s)' : ''}${novos && repetidos ? ' · ' : ''}${repetidos ? repetidos + ' já recebida(s), atualizada(s)' : ''}`);
+  else if (invalidos) toast('Arquivo não reconhecido. Use o pacote enviado pelo app PESKAR.', 4000);
+  await refresh();
+  if (novos === 1 && jsons.length === 1) { try { const d = JSON.parse(await jsons[0].blob.text()); go('cap-' + d.id); return; } catch (e) { } }
+  render();
+}
+// Arquivos que chegaram pelo "Compartilhar" / "Abrir com" do Android.
+let busyNative = false;
+async function pullNative() {
+  const n = native(); if (!n || busyNative) return;
+  let names = []; try { names = JSON.parse(n.pending() || '[]'); } catch (e) { }
+  if (!names.length) return;
+  busyNative = true; toast('Recebendo ' + names.length + ' arquivo(s)…');
+  try {
+    const files = [];
+    for (const name of names) {
+      try { const r = await fetch('/inbox/' + encodeURIComponent(name)); if (r.ok) files.push(new File([await r.blob()], name, { type: mimeOf(name) === 'application/octet-stream' && /\.zip$/i.test(name) ? 'application/zip' : mimeOf(name) })); } catch (e) { }
+    }
+    await importFiles(files);
+    for (const name of names) n.remove(name);
+  } finally { busyNative = false; }
+}
+window.onPacotes = pullNative;
+
+
+// ---------- ASSINATURA DO JUIZ ----------
+// Cada celular de juiz tem uma chave própria (ECDSA P-256). A decisão vai num código assinado que o app do pescador confere.
+const b64u = u8 => btoa(String.fromCharCode(...u8)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+let KEY = null;
+async function juizKey() {
+  if (KEY) return KEY;
+  const saved = lsGet('juiz.chave', null);
+  let priv, pubRaw;
+  if (saved) {
+    priv = await crypto.subtle.importKey('jwk', saved.priv, { name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign']);
+    pubRaw = new Uint8Array(saved.pub);
+  } else {
+    const kp = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+    priv = kp.privateKey; pubRaw = new Uint8Array(await crypto.subtle.exportKey('raw', kp.publicKey));
+    lsSet('juiz.chave', { priv: await crypto.subtle.exportKey('jwk', priv), pub: [...pubRaw] });
+  }
+  const fp = [...new Uint8Array(await crypto.subtle.digest('SHA-256', pubRaw))].slice(0, 4).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+  KEY = { priv, pubRaw, fp: fp.slice(0, 4) + '-' + fp.slice(4) };
+  return KEY;
+}
+async function codigoDecisao(c) {
+  const d = c.dados, D = c.decisao, k = await juizKey();
+  const p = { v: 1, id: d.id, t: d.torneio ? d.torneio.id : null, st: D.status === 'homologada' ? 'H' : D.status === 'ajustada' ? 'A' : 'R', mm: D.mm_final, app: Math.round(d.medida.mm), mot: D.motivo || undefined, obs: D.obs || undefined, j: D.juiz || undefined, em: Math.floor(new Date(D.em) / 1000), vh: d.video && d.video.sha256 ? d.video.sha256.slice(0, 16) : undefined };
+  const pl = b64u(new TextEncoder().encode(JSON.stringify(p)));
+  const sig = new Uint8Array(await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, k.priv, new TextEncoder().encode(pl)));
+  return `PESKAR1.${pl}.${b64u(sig)}.${b64u(k.pubRaw)}`;
+}
+
+// ---------- ESTADO ----------
+let CAPS = [];
+let juiz = lsGet('juiz.nome', '');
+let filtro = lsGet('juiz.filtro', 'pendentes');
+async function refresh() { CAPS = (await DB.all('caps')).sort((a, b) => (b.recebido_em || '').localeCompare(a.recebido_em || '')); const p = CAPS.filter(c => !c.decisao).length; const nb = $('#nb'); nb.hidden = !p; nb.textContent = p; }
+const ST = { homologada: ['Homologada', 'ok'], ajustada: ['Homologada c/ ajuste', 'warn'], recusada: ['Recusada', 'bad'] };
+const stChip = c => c.decisao ? `<span class="chip ${ST[c.decisao.status][1]}">${ST[c.decisao.status][0]}</span>` : '<span class="chip pend">Pendente</span>';
+const integChip = c => c.integridade === 'ok' ? '<span class="chip ok">Vídeo íntegro</span>' : c.integridade === 'alterado' ? '<span class="chip bad">Vídeo alterado</span>' : c.integridade === 'sem_video' ? '<span class="chip bad">Sem vídeo</span>' : '<span class="chip warn">Sem assinatura</span>';
+const finalMm = c => c.decisao ? (c.decisao.status === 'recusada' ? null : c.decisao.mm_final) : null;
+const pescNome = d => (d.pescador && (d.pescador.apelido || d.pescador.nome)) || 'Pescador';
+const pescKey = d => ((d.pescador && (d.pescador.inscricao || d.pescador.nome || d.pescador.apelido)) || 'anon') + '';
+const torneioNome = d => d.torneio ? d.torneio.nome : 'Treino (sem torneio)';
+const torneioKey = d => d.torneio ? d.torneio.id : 'treino';
+
+// ---------- ROTAS ----------
+function go(h) { if (location.hash === '#' + h) render(); else location.hash = h; }
+window.addEventListener('hashchange', render);
+function tab() { const h = location.hash.slice(1); return h.startsWith('cap-') ? 'caixa' : (h || 'caixa'); }
+const urls = [];
+function revokeAll() { while (urls.length) URL.revokeObjectURL(urls.pop()); }
+function render() {
+  revokeAll();
+  const h = location.hash.slice(1) || 'caixa';
+  document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab()));
+  $('#btn-juiz').textContent = juiz ? 'Juiz: ' + juiz : 'Definir nome do juiz';
+  if (h.startsWith('cap-')) renderCap(h.slice(4));
+  else if (h === 'ranking') renderRanking();
+  else if (h === 'ajuda') renderAjuda();
+  else renderCaixa();
+  window.scrollTo(0, 0);
+}
+document.querySelectorAll('#nav button').forEach(b => b.onclick = () => go(b.dataset.tab));
+$('#btn-juiz').onclick = () => { const v = prompt('Nome do juiz (aparece nas decisões):', juiz || ''); if (v != null) { juiz = v.trim(); lsSet('juiz.nome', juiz); render(); } };
+$('#file').onchange = e => { const f = [...e.target.files]; e.target.value = ''; if (f.length) importFiles(f); };
+
+// ---------- CAIXA DE ENTRADA ----------
+async function renderCaixa() {
+  const pend = CAPS.filter(c => !c.decisao), dec = CAPS.filter(c => c.decisao);
+  const list = filtro === 'pendentes' ? pend : filtro === 'decididas' ? dec : CAPS;
+  view.innerHTML = `
+  <div class="eyebrow">Caixa de entrada</div><h1>Capturas para revisar</h1>
+  <p class="lead">${pend.length} pendente(s) · ${dec.length} decidida(s)</p>
+  <button class="btn green" id="btn-open" style="width:100%">Abrir pacote recebido (.zip)</button>
+  <p class="note" style="margin:6px 2px 14px">No WhatsApp ou Telegram, toque no arquivo <b>PESKAR_….zip</b> e escolha <b>Compartilhar → PESKAR Juiz</b>. Ou baixe o arquivo e abra por aqui.</p>
+  <div class="tabs">${[['pendentes', 'Pendentes'], ['decididas', 'Decididas'], ['todas', 'Todas']].map(([k, l]) => `<button data-f="${k}" class="${filtro === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+  <div class="stack" id="list">${list.length ? '' : `<div class="empty">${filtro === 'pendentes' ? 'Nenhuma captura pendente.' : 'Nada por aqui ainda.'}</div>`}</div>`;
+  $('#btn-open').onclick = () => $('#file').click();
+  view.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { filtro = b.dataset.f; lsSet('juiz.filtro', filtro); renderCaixa(); });
+  const L = $('#list');
+  for (const c of list) {
+    const d = c.dados, mm = finalMm(c);
+    const el = document.createElement('button'); el.className = 'card';
+    el.innerHTML = `<div class="noimg"></div><div class="t"><b>${esc(d.especie || 'Tucunaré')} · ${cmTxt(mm != null ? mm : d.medida.mm)} cm</b>
+      <div class="sub">${esc(pescNome(d))}${d.pescador && d.pescador.inscricao ? ' · nº ' + esc(d.pescador.inscricao) : ''}</div>
+      <div class="sub">${esc(torneioNome(d))} · ${esc(fmtDT(d.capturado_em))}</div>
+      <div class="chips" style="margin-top:4px">${stChip(c)}${integChip(c)}</div></div>`;
+    el.onclick = () => go('cap-' + c.id);
+    L.appendChild(el);
+    if (c.tem_foto) DB.get('blobs', c.id + ':foto').then(b => { if (!b) return; const u = URL.createObjectURL(b); urls.push(u); const im = new Image(); im.src = u; im.alt = ''; el.firstChild.replaceWith(im); });
+  }
+}
+
+// ---------- CONFERÊNCIA AUTOMÁTICA ----------
+function autoChecks(c) {
+  const d = c.dados, out = [];
+  const add = (st, t, s) => out.push({ st, t, s });
+  if (c.integridade === 'ok') add('ok', 'Vídeo íntegro', 'A assinatura do vídeo confere com a gravada pelo app. Não foi editado.');
+  else if (c.integridade === 'alterado') add('bad', 'Vídeo alterado', 'A assinatura não confere. O vídeo foi editado ou recomprimido (envie como DOCUMENTO/arquivo, não como vídeo).');
+  else if (c.integridade === 'sem_video') add('bad', 'Sem vídeo', 'O pacote chegou sem o vídeo.');
+  else add('warn', 'Vídeo sem assinatura', 'Não dá para garantir que não foi editado.');
+  const V = d.video, mk = V && V.marcos ? V.marcos : [];
+  const med = mk.find(m => m.evento === 'medida'), fim = mk.find(m => m.evento === 'fim');
+  if (V && med && fim) {
+    const sol = fim.t - med.t;
+    add(sol >= 3 ? 'ok' : 'warn', 'Medição e soltura no mesmo vídeo', `Medida aos ${fmtDur(med.t)}; ${sol >= 3 ? 'depois mais ' + Math.round(sol) + ' s de soltura' : 'só ' + sol.toFixed(1) + ' s depois da medida — confira se a soltura aparece'}. Duração total ${fmtDur(V.duracao_s || fim.t)}.`);
+  } else add('bad', 'Sem marcação de medida/soltura', 'O vídeo não tem os marcos do app.');
+  if (V && V.inicio) {
+    const dif = Math.abs(new Date(d.capturado_em) - new Date(V.fim || V.inicio)) / 60000;
+    add(dif <= 15 ? 'ok' : 'warn', 'Data e hora', `Gravado em ${fmtDT(V.inicio)}${dif > 15 ? ` — registro ${Math.round(dif)} min depois do vídeo` : ''}. Confira se está dentro do horário do torneio.`);
+  }
+  const g = d.localizacao && (d.localizacao.inicio || d.localizacao.fim);
+  if (g) {
+    const a = d.localizacao.inicio, b = d.localizacao.fim;
+    let mv = '';
+    if (a && b) { const R = 6371000, r = x => x * Math.PI / 180; const dl = r(b.lat - a.lat), dn = r(b.lng - a.lng); const h = Math.sin(dl / 2) ** 2 + Math.cos(r(a.lat)) * Math.cos(r(b.lat)) * Math.sin(dn / 2) ** 2; const dist = 2 * R * Math.asin(Math.sqrt(h)); mv = ` · deslocamento durante o vídeo ${Math.round(dist)} m`; }
+    add(g.acc && g.acc > 100 ? 'warn' : 'ok', 'Localização GPS', `${g.lat.toFixed(5)}, ${g.lng.toFixed(5)} (±${Math.round(g.acc || 0)} m)${mv}. Confira se é na área do torneio.`);
+  } else add('warn', 'Sem localização', 'O celular não registrou GPS durante o vídeo.');
+  const r = d.regua || {};
+  const qok = r.quadrados_esperados ? r.quadrados_lidos / r.quadrados_esperados : 0;
+  add(qok >= 0.75 ? 'ok' : qok >= 0.5 ? 'warn' : 'bad', 'Régua reconhecida', `${r.modelo || 'régua'} · ${r.quadrados_lidos || 0}/${r.quadrados_esperados || '?'} quadrados lidos${r.qr_conferido ? ' · QR conferido' : ''} · incerteza ±${(d.medida.incerteza_mm || 0).toFixed(1).replace('.', ',')} mm.`);
+  const dv = d.medida.desvio_linha_central_mm;
+  if (dv) { const bad = Math.abs(dv.cauda || 0) > 25 || Math.abs(dv.focinho || 0) > 18; add(bad ? 'warn' : 'ok', 'Peixe reto sobre a linha central', `Focinho ${Math.round(Math.abs(dv.focinho || 0))} mm e cauda ${Math.round(Math.abs(dv.cauda || 0))} mm fora da linha central${bad ? ' — peixe pode estar torto' : ''}.`); }
+  const fz = d.medida.focinho_do_zero_mm;
+  if (fz != null) add(Math.abs(fz) <= 5 ? 'ok' : 'warn', 'Focinho no zero', `Focinho a ${Math.abs(fz).toFixed(1).replace('.', ',')} mm do batente${Math.abs(fz) > 5 ? ' — confira se a boca está encostada' : ''}.`);
+  const ck = d.confirmacoes_do_pescador || {};
+  const nck = ['boca_fechada', 'cauda_fechada', 'peixe_reto', 'soltura_no_video'].filter(k => ck[k]).length;
+  add(nck === 4 ? 'info' : 'warn', 'Declaração do pescador', `${nck}/4 itens confirmados (boca fechada, cauda fechada, peixe reto, soltura filmada).`);
+  return out;
+}
+
+// ---------- DETALHE / DECISÃO ----------
+const MOTIVOS = ['Boca aberta', 'Cauda mal posicionada', 'Peixe torto / fora da régua', 'Soltura não aparece no vídeo', 'Peixe parece morto ou machucado', 'Vídeo cortado ou alterado', 'Régua não reconhecida', 'Espécie não permitida', 'Fora do horário ou local do torneio', 'Outro'];
+async function renderCap(id) {
+  const c = await DB.get('caps', id);
+  if (!c) { view.innerHTML = '<div class="empty">Captura não encontrada.</div><button class="btn ghost" id="b">Voltar</button>'; $('#b').onclick = () => go('caixa'); return; }
+  const d = c.dados, D = c.decisao, mk = (d.video && d.video.marcos) || [];
+  const med = mk.find(m => m.evento === 'medida');
+  const checks = autoChecks(c);
+  const g = d.localizacao && (d.localizacao.inicio || d.localizacao.fim);
+  view.innerHTML = `
+  <button class="btn ghost small" id="b-back">← Recebidas</button>
+  <div class="eyebrow" style="margin-top:12px">Captura ${esc(d.id)}</div>
+  <div class="row" style="align-items:flex-end;gap:12px"><div style="flex:2"><h1>${esc(d.especie || 'Tucunaré')}</h1><div class="chips">${stChip(c)}${integChip(c)}</div></div>
+    <div style="flex:1;text-align:right"><div class="big">${cmTxt(d.medida.mm)}<small> cm</small></div><div class="note">medida do app</div></div></div>
+  <div class="panel stack" style="margin-top:14px">
+    <h3>Vídeo da medição e soltura</h3>
+    ${c.tem_video ? '<video id="vid" controls playsinline preload="metadata"></video>' : '<div class="empty">Sem vídeo no pacote.</div>'}
+    <div class="vtools">${med ? `<button class="btn ghost small" data-seek="${Math.max(0, med.t - 1)}">Ir para a medida (${fmtDur(med.t)})</button><button class="btn ghost small" data-seek="${med.t + 0.5}">Ir para a soltura</button>` : ''}<button class="btn ghost small" id="b-speed">Velocidade 1x</button></div>
+  </div>
+  <div class="panel stack" style="margin-top:12px">
+    <h3>Foto da medida (toque para ampliar)</h3>
+    ${c.tem_foto ? '<img id="foto" class="photo" alt="Foto da medida com a régua">' : '<div class="empty">Sem foto no pacote.</div>'}
+  </div>
+  <div class="panel" style="margin-top:12px"><h3>Conferência automática</h3><ul class="auto">${checks.map(k => `<li class="${k.st}"><i>${k.st === 'ok' ? '✓' : k.st === 'bad' ? '✕' : k.st === 'warn' ? '!' : 'i'}</i><span><b>${esc(k.t)}</b>${esc(k.s)}</span></li>`).join('')}</ul>
+    ${g ? `<button class="btn ghost small" id="b-map" style="margin-top:10px;width:100%">Ver local no mapa</button>` : ''}</div>
+  <div class="panel" style="margin-top:12px"><h3>Dados</h3><dl class="kv">
+    <dt>Pescador</dt><dd>${esc(d.pescador && d.pescador.nome || '–')}${d.pescador && d.pescador.apelido ? ' (' + esc(d.pescador.apelido) + ')' : ''}</dd>
+    <dt>Inscrição</dt><dd>${esc(d.pescador && d.pescador.inscricao || '–')}${d.pescador && d.pescador.categoria ? ' · ' + esc(d.pescador.categoria) : ''}</dd>
+    <dt>Cidade</dt><dd>${esc(d.pescador && d.pescador.cidade || '–')}</dd>
+    <dt>Torneio</dt><dd>${esc(torneioNome(d))}${d.torneio && d.torneio.local ? ' · ' + esc(d.torneio.local) : ''}</dd>
+    <dt>Capturado</dt><dd>${esc(fmtDT(d.capturado_em))}</dd>
+    <dt>Recebido</dt><dd>${esc(fmtDT(c.recebido_em))}</dd>
+    <dt>Régua</dt><dd>${esc(d.regua && d.regua.modelo || '–')}</dd>
+    <dt>Assinatura</dt><dd style="font-family:monospace;font-size:12px">${esc((d.video && d.video.sha256 || '–').slice(0, 24))}…</dd>
+  </dl></div>
+  <div class="panel stack ${D ? 'decided ' + ST[D.status][1] : ''}" style="margin-top:12px" id="dec"></div>`;
+  $('#b-back').onclick = () => go('caixa');
+  if (c.tem_video) DB.get('blobs', id + ':video').then(b => { if (!b) return; const u = URL.createObjectURL(b); urls.push(u); $('#vid').src = u; });
+  if (c.tem_foto) DB.get('blobs', id + ':foto').then(b => { if (!b) return; const u = URL.createObjectURL(b); urls.push(u); $('#foto').src = u; $('#foto').onclick = () => { const z = document.createElement('div'); z.className = 'zoom'; z.innerHTML = `<button class="btn green small">Fechar</button><img src="${u}" alt="">`; z.querySelector('button').onclick = () => z.remove(); document.body.appendChild(z); }; });
+  view.querySelectorAll('[data-seek]').forEach(b => b.onclick = () => { const v = $('#vid'); if (!v) return; v.currentTime = +b.dataset.seek; v.play().catch(() => { }); });
+  const sp = [1, 0.5, 0.25]; let si = 0;
+  $('#b-speed').onclick = () => { si = (si + 1) % sp.length; const v = $('#vid'); if (v) v.playbackRate = sp[si]; $('#b-speed').textContent = 'Velocidade ' + String(sp[si]).replace('.', ',') + 'x'; };
+  if ($('#b-map')) $('#b-map').onclick = () => { window.open(`https://www.google.com/maps/search/?api=1&query=${g.lat},${g.lng}`, '_blank'); };
+  renderDecisao(c);
+}
+function pedirNome() { if (juiz) return; const v = prompt('Seu nome (aparece na decisão enviada ao pescador):', ''); if (v && v.trim()) { juiz = v.trim(); lsSet('juiz.nome', juiz); $('#btn-juiz').textContent = 'Juiz: ' + juiz; } }
+function renderDecisao(c) {
+  const d = c.dados, D = c.decisao, box = $('#dec');
+  if (D) {
+    box.innerHTML = `<h3>Decisão do juiz</h3>
+      <div class="big" style="font-size:34px">${D.status === 'recusada' ? 'Recusada' : cmTxt(D.mm_final) + '<small> cm</small>'}</div>
+      <p class="note" style="margin:0">${ST[D.status][0]}${D.status === 'ajustada' ? ` (app: ${cmTxt(d.medida.mm)} cm)` : ''}${D.motivo ? ' · ' + esc(D.motivo) : ''}${D.obs ? ' · ' + esc(D.obs) : ''}<br>${esc(D.juiz || 'Juiz')} · ${esc(fmtDT(D.em))}</p>
+      <button class="btn green" id="b-avisar">Avisar o pescador (WhatsApp / Telegram)</button>
+      <button class="btn ghost" id="b-reabrir">Rever decisão</button>
+      <button class="btn ghost small" id="b-del" style="color:var(--bad)">Apagar captura deste celular</button>`;
+    $('#b-avisar').onclick = () => avisar(c);
+    $('#b-reabrir').onclick = async () => { c.decisao = null; await DB.put('caps', c.id, c); await refresh(); renderDecisao(c); };
+    $('#b-del').onclick = async () => { if (!confirm('Apagar esta captura e o vídeo deste celular?')) return; await DB.del('caps', c.id); await DB.del('blobs', c.id + ':video'); await DB.del('blobs', c.id + ':foto'); await refresh(); go('caixa'); };
+    return;
+  }
+  box.innerHTML = `<h3>Sua conferência no vídeo</h3>
+    <label class="check"><input type="checkbox" class="jk"> Boca fechada e encostada no zero da régua.</label>
+    <label class="check"><input type="checkbox" class="jk"> Cauda fechada; a marca de fim da cauda está na ponta certa.</label>
+    <label class="check"><input type="checkbox" class="jk"> Peixe reto sobre a linha central da régua.</label>
+    <label class="check"><input type="checkbox" class="jk"> É o mesmo peixe na medição e na soltura.</label>
+    <label class="check"><input type="checkbox" class="jk"> Peixe solto vivo na água.</label>
+    <div><label class="note" for="mm-final">Medida final (cm)</label><input type="number" id="mm-final" step="0.1" min="1" max="200" inputmode="decimal" value="${(d.medida.mm / 10).toFixed(1)}"></div>
+    <p class="note" id="dec-err" style="color:var(--bad);margin:0" hidden></p>
+    <button class="btn green" id="b-hom">Homologar</button>
+    <div><label class="note" for="motivo">Motivo para recusar</label><select id="motivo">${MOTIVOS.map(m => `<option>${m}</option>`).join('')}</select></div>
+    <input type="text" id="obs" placeholder="Observação (opcional)" maxlength="160">
+    <button class="btn bad" id="b-rec">Recusar captura</button>`;
+  $('#b-hom').onclick = async () => {
+    const all = [...document.querySelectorAll('.jk')].every(x => x.checked);
+    const v = parseFloat(String($('#mm-final').value).replace(',', '.'));
+    const err = $('#dec-err');
+    if (!all) { err.hidden = false; err.textContent = 'Confira os 5 itens no vídeo antes de homologar.'; return; }
+    if (!(v > 0)) { err.hidden = false; err.textContent = 'Informe a medida final.'; return; }
+    pedirNome();
+    const mmF = Math.round(v * 10);
+    const aj = Math.abs(mmF - Math.round(d.medida.mm)) >= 1;
+    c.decisao = { status: aj ? 'ajustada' : 'homologada', mm_final: aj ? mmF : Math.round(d.medida.mm), mm_app: d.medida.mm, motivo: null, obs: $('#obs').value.trim() || null, juiz: juiz || null, em: new Date().toISOString() };
+    await DB.put('caps', c.id, c); await refresh(); toast(aj ? 'Homologada com ajuste. Agora avise o pescador.' : 'Homologada. Agora avise o pescador.'); renderCap(c.id);
+  };
+  $('#b-rec').onclick = async () => {
+    pedirNome();
+    c.decisao = { status: 'recusada', mm_final: null, mm_app: d.medida.mm, motivo: $('#motivo').value, obs: $('#obs').value.trim() || null, juiz: juiz || null, em: new Date().toISOString() };
+    await DB.put('caps', c.id, c); await refresh(); toast('Recusada. Agora avise o pescador.'); renderCap(c.id);
+  };
+}
+async function textoDecisao(c) {
+  const d = c.dados, D = c.decisao;
+  const head = D.status === 'recusada' ? 'RECUSADA' : D.status === 'ajustada' ? `HOMOLOGADA COM AJUSTE: ${cmTxt(D.mm_final)} cm (app: ${cmTxt(d.medida.mm)} cm)` : `HOMOLOGADA: ${cmTxt(D.mm_final)} cm`;
+  const code = await codigoDecisao(c);
+  return `PESKAR · decisão do juiz\nCaptura ${d.id} · ${d.especie || 'Tucunaré'}\n${pescNome(d)}${d.pescador && d.pescador.inscricao ? ' · nº ' + d.pescador.inscricao : ''}\n${torneioNome(d)}\n\n${head}${D.motivo ? '\nMotivo: ' + D.motivo : ''}${D.obs ? '\nObs.: ' + D.obs : ''}\n\nJuiz: ${D.juiz || '–'} · ${fmtDT(D.em)}\n\nPara atualizar no app: segure esta mensagem → Compartilhar → PESKAR (ou copie e cole em "Código do juiz").\n${code}`;
+}
+async function shareText(txt, title) {
+  const n = native();
+  if (n && n.shareText) { n.shareText('[]', title, txt); return; }
+  if (navigator.share) { try { await navigator.share({ text: txt, title }); return; } catch (e) { if (e && e.name === 'AbortError') return; } }
+  try { await navigator.clipboard.writeText(txt); toast('Texto copiado. Cole no WhatsApp.'); } catch (e) { prompt('Copie o texto:', txt); }
+}
+async function avisar(c) { shareText(await textoDecisao(c), 'Decisão da captura ' + c.id); }
+
+// ---------- RANKING ----------
+let rkT = null;
+function rankingDe(tk) {
+  const by = {};
+  for (const c of CAPS) {
+    const d = c.dados; if (torneioKey(d) !== tk) continue;
+    const k = pescKey(d); const p = by[k] || (by[k] = { nome: pescNome(d), insc: d.pescador && d.pescador.inscricao, val: [], pend: 0, rec: 0 });
+    if (!c.decisao) p.pend++; else if (c.decisao.status === 'recusada') p.rec++; else p.val.push(c.decisao.mm_final);
+  }
+  return Object.values(by).map(p => { p.val.sort((a, b) => b - a); p.top3 = p.val.slice(0, 3).reduce((a, b) => a + b, 0); p.maior = p.val[0] || 0; return p; })
+    .sort((a, b) => b.top3 - a.top3 || b.maior - a.maior);
+}
+function renderRanking() {
+  const ts = {}; for (const c of CAPS) ts[torneioKey(c.dados)] = torneioNome(c.dados);
+  const keys = Object.keys(ts);
+  if (!rkT || !ts[rkT]) rkT = keys[0] || null;
+  const R = rkT ? rankingDe(rkT) : [];
+  view.innerHTML = `
+  <div class="eyebrow">Ranking</div><h1>Resultado pelas capturas homologadas</h1>
+  <p class="lead">Soma das 3 maiores capturas homologadas de cada pescador; desempate pelo maior peixe.</p>
+  ${keys.length ? `<select id="rk-t" style="margin-bottom:12px">${keys.map(k => `<option value="${esc(k)}" ${k === rkT ? 'selected' : ''}>${esc(ts[k])}</option>`).join('')}</select>` : ''}
+  ${R.length ? `<div class="panel" style="padding:6px 10px"><table><thead><tr><th>#</th><th>Pescador</th><th class="num">3 maiores</th><th class="num">Maior</th><th class="num">Hom.</th></tr></thead><tbody>
+    ${R.map((p, i) => `<tr><td class="pos">${p.top3 ? i + 1 : '–'}</td><td>${esc(p.nome)}${p.insc ? `<div class="note">nº ${esc(p.insc)}</div>` : ''}${p.pend ? `<div class="note">${p.pend} pendente(s)</div>` : ''}</td><td class="num"><b>${p.top3 ? cmTxt(p.top3) : '–'}</b></td><td class="num">${p.maior ? cmTxt(p.maior) : '–'}</td><td class="num">${p.val.length}${p.rec ? `<div class="note">${p.rec} rec.</div>` : ''}</td></tr>`).join('')}
+  </tbody></table></div>
+  <div class="row" style="margin-top:12px"><button class="btn ghost" id="b-txt">Enviar resultado</button><button class="btn ghost" id="b-csv">Planilha (CSV)</button></div>` : '<div class="empty">Nenhuma captura recebida ainda.</div>'}`;
+  if ($('#rk-t')) $('#rk-t').onchange = e => { rkT = e.target.value; renderRanking(); };
+  if ($('#b-txt')) $('#b-txt').onclick = () => {
+    const txt = `PESKAR · ranking parcial\n${ts[rkT]}\n(soma das 3 maiores homologadas)\n\n` + R.filter(p => p.top3).map((p, i) => `${i + 1}º ${p.nome} — ${cmTxt(p.top3)} cm (maior ${cmTxt(p.maior)} cm)`).join('\n') + `\n\nAtualizado ${fmtDT(new Date().toISOString())}${juiz ? ' · juiz ' + juiz : ''}`;
+    shareText(txt, 'Ranking ' + ts[rkT]);
+  };
+  if ($('#b-csv')) $('#b-csv').onclick = () => exportCsv(rkT, ts[rkT]);
+}
+function exportCsv(tk, nome) {
+  const q = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+  const rows = [['captura', 'torneio', 'pescador', 'apelido', 'inscricao', 'especie', 'capturado_em', 'medida_app_cm', 'medida_final_cm', 'status', 'motivo', 'obs', 'juiz', 'decidido_em', 'video_integro', 'lat', 'lng']];
+  for (const c of CAPS) {
+    const d = c.dados; if (torneioKey(d) !== tk) continue; const D = c.decisao || {}; const g = d.localizacao && (d.localizacao.inicio || d.localizacao.fim);
+    rows.push([d.id, torneioNome(d), d.pescador && d.pescador.nome, d.pescador && d.pescador.apelido, d.pescador && d.pescador.inscricao, d.especie, d.capturado_em, (d.medida.mm / 10).toFixed(1).replace('.', ','), D.mm_final ? (D.mm_final / 10).toFixed(1).replace('.', ',') : '', D.status || 'pendente', D.motivo, D.obs, D.juiz, D.em, c.integridade === 'ok' ? 'sim' : 'não', g ? g.lat : '', g ? g.lng : '']);
+  }
+  const csv = '﻿' + rows.map(r => r.map(q).join(';')).join('\r\n');
+  const name = `PESKAR_resultado_${String(nome).replace(/[^\w]+/g, '_').slice(0, 40)}.csv`;
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const n = native();
+  if (n && n.begin) { n.reset(); n.begin(name); const b64 = btoa(unescape(encodeURIComponent(csv))); n.append(b64); n.end(); n.shareText(JSON.stringify([name]), 'Resultado ' + nome, null); return; }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+}
+
+// ---------- AJUDA ----------
+function renderAjuda() {
+  view.innerHTML = `
+  <div class="eyebrow">Como receber</div><h1>Do pescador para o juiz, sem servidor</h1>
+  <div class="panel stack">
+    <h3>1 · O pescador envia</h3>
+    <p class="note" style="margin:0">No app PESKAR, depois de registrar a captura em vídeo, ele toca em <b>Enviar para o juiz</b> e escolhe WhatsApp ou Telegram. Vai <b>um arquivo só</b>: <b>PESKAR_&lt;captura&gt;.zip</b>, com o vídeo, a foto da medida e os dados.</p>
+    <p class="note" style="margin:0">Importante: o arquivo vai como <b>documento</b>. Se alguém baixar o vídeo e reenviar como vídeo, o WhatsApp recomprime e o app do juiz acusa <b>Vídeo alterado</b>.</p>
+  </div>
+  <div class="panel stack" style="margin-top:12px">
+    <h3>2 · O juiz recebe</h3>
+    <p class="note" style="margin:0"><b>WhatsApp:</b> toque e segure o arquivo .zip → ícone de compartilhar → <b>PESKAR Juiz</b>. Ou toque no arquivo → <b>Abrir com PESKAR Juiz</b>.</p>
+    <p class="note" style="margin:0"><b>Telegram:</b> toque nos três pontinhos do arquivo → <b>Compartilhar</b> (ou "Abrir com") → <b>PESKAR Juiz</b>.</p>
+    <p class="note" style="margin:0">Também dá para baixar o arquivo e usar <b>Abrir pacote recebido</b> na caixa de entrada.</p>
+  </div>
+  <div class="panel stack" style="margin-top:12px">
+    <h3>3 · O juiz decide e avisa</h3>
+    <p class="note" style="margin:0">A mensagem leva um código assinado. O pescador segura a mensagem → <b>Compartilhar → PESKAR</b> e a medida confirmada aparece no app dele na hora.</p>
+    <p class="note" style="margin:0">Assista ao vídeo (botões para pular até a medida e a soltura, câmera lenta), confira os 5 itens e homologue, ajuste a medida ou recuse com o motivo. Depois toque em <b>Avisar o pescador</b> para mandar a decisão por mensagem. No Ranking, envie o resultado parcial no grupo ou gere a planilha.</p>
+  </div>
+  <div class="panel stack" style="margin-top:12px">
+    <h3>Chave deste juiz</h3>
+    <p class="note" style="margin:0">Cada decisão vai assinada por este celular. O app do pescador mostra a chave junto com a decisão e só aceita, no mesmo torneio, decisões dessa chave. Chave: <b id="fp">…</b></p>
+  </div>
+  <div class="panel stack" style="margin-top:12px">
+    <h3>Dica de organização</h3>
+    <p class="note" style="margin:0">Crie um grupo por torneio só com os juízes, ou um número de WhatsApp da organização para receber as capturas. Tudo fica salvo neste celular; os vídeos ocupam espaço — apague as capturas antigas depois de fechar o resultado.</p>
+  </div>`;
+  juizKey().then(k => { const e = $('#fp'); if (e) e.textContent = k.fp; });
+}
+
+// ---------- INÍCIO ----------
+(async () => {
+  await refresh(); render();
+  pullNative();
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) pullNative(); });
+})();
+</script>
+</body>
+</html>
