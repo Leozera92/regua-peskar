@@ -1748,7 +1748,7 @@ function renderDone() {
   <div class="ticket"><div class="k">${t ? 'Captura postada' : 'Treino salvo'}</div><div class="num">${cm(c.mm)} cm</div><div style="font-weight:700;margin-top:6px">${esc(c.especie)}${t ? ' · ' + esc(t.nome) : ''}</div></div>
   <p class="lead" style="margin-top:14px">${t ? 'Sua captura está em validação. Quando o juiz homologar, ela entra no ranking.' : 'Treinos não valem para ranking, mas ajudam a praticar a medição.'}</p>
   ${S.lastSaved ? '' : '<p class="note">Sem espaço para guardar no aparelho: a captura fica só nesta sessão.</p>'}
-  ${c.video ? `<button class="btn gold" id="btn-exp" style="width:100%;margin-bottom:10px">Enviar vídeo e medida para revisão</button>` : ''}
+  ${c.video ? `<button class="btn gold" id="btn-exp" style="width:100%;margin-bottom:10px">Enviar para o juiz (WhatsApp / Telegram)</button>` : ''}
   <div class="row">${t ? `<button class="btn ghost" data-go="ranking-${t.id}">Ver no ranking</button>` : ''}<button class="btn ${c.video ? 'ghost' : 'gold'}" id="btn-new">Nova captura</button></div>`;
   if ($('#btn-exp')) $('#btn-exp').onclick = () => exportCap(c, $('#btn-exp'));
   $('#btn-new').onclick = () => { S.step = 'setup'; S.lastCap = null; renderMedir(); };
@@ -1761,7 +1761,7 @@ function buildDados(c) {
   const t = tById(c.torneioId), ins = t && inscricoes[t.id];
   const ext = (c.video && /mp4/.test(c.video.tipo)) ? 'mp4' : 'webm';
   return {
-    formato: 'peskar-captura/1', id: c.id, gerado_em: new Date().toISOString(), app: { nome: 'PESKAR Torneios', versao: '0.7' },
+    formato: 'peskar-captura/1', id: c.id, gerado_em: new Date().toISOString(), app: { nome: 'PESKAR Torneios', versao: '0.8' },
     torneio: t ? { id: t.id, nome: t.nome, local: t.local } : null,
     pescador: { nome: perfil.nome || null, apelido: (ins && ins.apelido) || perfil.apelido || null, cidade: perfil.cidade || null, inscricao: ins ? ins.numero : null, categoria: ins ? ins.categoria : null },
     especie: c.especie,
@@ -1776,6 +1776,35 @@ function buildDados(c) {
   };
 }
 function blobB64(part) { return new Promise((ok, no) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1] || ''); fr.onerror = () => no(fr.error); fr.readAsDataURL(part); }); }
+// ZIP sem compressão (vídeo e jpg já são comprimidos): um arquivo só para mandar no WhatsApp/Telegram.
+const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(u8) { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRC_T[(c ^ u8[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+async function makeZip(files) {
+  const parts = [], central = []; let off = 0;
+  const d = new Date(), dt = ((d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1)), dd = (((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate());
+  for (const [name, blob] of files) {
+    const data = new Uint8Array(await blob.arrayBuffer()), nm = new TextEncoder().encode(name), crc = crc32(data);
+    const h = new DataView(new ArrayBuffer(30));
+    h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true); h.setUint16(8, 0, true);
+    h.setUint16(10, dt, true); h.setUint16(12, dd, true); h.setUint32(14, crc, true); h.setUint32(18, data.length, true); h.setUint32(22, data.length, true);
+    h.setUint16(26, nm.length, true); h.setUint16(28, 0, true);
+    parts.push(h.buffer, nm, data);
+    const c = new DataView(new ArrayBuffer(46));
+    c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, 0x0800, true); c.setUint16(10, 0, true);
+    c.setUint16(12, dt, true); c.setUint16(14, dd, true); c.setUint32(16, crc, true); c.setUint32(20, data.length, true); c.setUint32(24, data.length, true);
+    c.setUint16(28, nm.length, true); c.setUint32(42, off, true);
+    central.push(c.buffer, nm);
+    off += 30 + nm.length + data.length;
+  }
+  const csize = central.reduce((a, p) => a + (p.byteLength || p.length), 0);
+  const e = new DataView(new ArrayBuffer(22));
+  e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true); e.setUint32(12, csize, true); e.setUint32(16, off, true);
+  return new Blob([...parts, ...central, e.buffer], { type: 'application/zip' });
+}
+function resumoEnvio(c, d) {
+  const t = tById(c.torneioId);
+  return `PESKAR · captura ${c.id}\n${d.especie} · ${cm(c.mm)} cm\n${d.pescador.apelido || d.pescador.nome || 'Pescador'}${d.pescador.inscricao ? ' · inscrição ' + d.pescador.inscricao : ''}\n${t ? t.nome : 'Treino'}\nAbra o arquivo no app PESKAR Juiz.`;
+}
 async function exportCap(c, btn) {
   const label = btn ? btn.textContent : '';
   const setP = txt => { if (btn) btn.textContent = txt; };
@@ -1787,27 +1816,80 @@ async function exportCap(c, btn) {
     if (vid) files.push([dados.arquivos.video, vid]);
     if (foto) files.push([dados.arquivos.foto_medida, foto]);
     files.push([`PESKAR_${c.id}_dados.json`, new Blob([JSON.stringify(dados, null, 2)], { type: 'application/json' })]);
+    const zip = await makeZip(files), zname = `PESKAR_${c.id}.zip`, texto = resumoEnvio(c, dados);
     const n = nativeApp();
     if (n && n.begin) {
-      n.reset();
-      const total = files.reduce((a, f) => a + f[1].size, 0); let done = 0;
-      for (const [name, b] of files) {
-        n.begin(name);
-        const CH = 786432;
-        for (let i = 0; i < b.size; i += CH) { n.append(await blobB64(b.slice(i, i + CH))); done += Math.min(CH, b.size - i); setP(`Preparando… ${Math.round(done / total * 100)}%`); }
-        n.end();
-      }
-      n.share(JSON.stringify(files.map(f => f[0])), 'Enviar captura ' + c.id + ' para revisão');
+      n.reset(); n.begin(zname);
+      const CH = 786432;
+      for (let i = 0; i < zip.size; i += CH) { n.append(await blobB64(zip.slice(i, i + CH))); setP(`Preparando… ${Math.round(Math.min(1, (i + CH) / zip.size) * 100)}%`); }
+      n.end();
+      if (n.shareText) n.shareText(JSON.stringify([zname]), 'Enviar captura ' + c.id + ' para o juiz', texto);
+      else n.share(JSON.stringify([zname]), 'Enviar captura ' + c.id + ' para o juiz');
       c.enviado = new Date().toISOString(); saveCaps();
       return;
     }
-    const fl = files.map(([name, b]) => new File([b], name, { type: b.type || 'application/octet-stream' }));
-    if (navigator.canShare && navigator.canShare({ files: fl })) { await navigator.share({ files: fl, title: 'Captura ' + c.id }); c.enviado = new Date().toISOString(); saveCaps(); return; }
-    toast('Envio disponível no app instalado (APK).');
+    const fl = [new File([zip], zname, { type: 'application/zip' })];
+    if (navigator.canShare && navigator.canShare({ files: fl })) { await navigator.share({ files: fl, title: 'Captura ' + c.id, text: texto }); c.enviado = new Date().toISOString(); saveCaps(); return; }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(zip); a.download = zname; document.body.appendChild(a); a.click(); a.remove();
+    c.enviado = new Date().toISOString(); saveCaps(); toast('Pacote salvo: ' + zname);
   } catch (e) {
     if (!e || e.name !== 'AbortError') toast('Não foi possível preparar o envio.');
   } finally { if (btn) { btn.disabled = false; btn.textContent = label; } }
 }
+
+
+// ---------- DECISÃO DO JUIZ (volta pelo WhatsApp/Telegram) ----------
+// Código "PESKAR1.<dados>.<assinatura>.<chave>" gerado pelo app PESKAR Juiz. Confere a assinatura,
+// a captura e o vídeo; no mesmo torneio só aceita a chave do primeiro juiz que decidiu (fixada no aparelho).
+const ub64 = s => { s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; return Uint8Array.from(atob(s), ch => ch.charCodeAt(0)); };
+async function lerCodigoJuiz(txt) {
+  const m = String(txt || '').match(/PESKAR1\.([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)/);
+  if (!m) return { erro: 'Não encontrei o código do juiz nesse texto.' };
+  let p; try { p = JSON.parse(new TextDecoder().decode(ub64(m[1]))); } catch (e) { return { erro: 'Código do juiz incompleto. Copie a mensagem inteira.' }; }
+  try {
+    const pub = await crypto.subtle.importKey('raw', ub64(m[3]), { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+    const ok = await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, pub, ub64(m[2]), new TextEncoder().encode(m[1]));
+    if (!ok) return { erro: 'Assinatura do juiz inválida: o código foi alterado.' };
+  } catch (e) { return { erro: 'Não foi possível conferir a assinatura do juiz.' }; }
+  const h = [...new Uint8Array(await crypto.subtle.digest('SHA-256', ub64(m[3])))].slice(0, 4).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+  return { p, fp: h.slice(0, 4) + '-' + h.slice(4) };
+}
+async function aplicarCodigoJuiz(txt, quiet) {
+  const r = await lerCodigoJuiz(txt);
+  if (r.erro) { if (!quiet) toast(r.erro); return r; }
+  const p = r.p, c = capturas.find(x => x.id === p.id);
+  if (!c) { toast('Essa decisão é da captura ' + p.id + ', que não está neste celular.'); return { erro: 'captura' }; }
+  if (p.vh && c.video && c.video.sha256 && !c.video.sha256.startsWith(p.vh)) { toast('A decisão não corresponde ao vídeo desta captura.'); return { erro: 'video' }; }
+  const chaves = (() => { try { return JSON.parse(localStorage.getItem('peskar.juizes') || '{}'); } catch (e) { return {}; } })();
+  const tk = p.t || c.torneioId || 'treino';
+  if (chaves[tk] && chaves[tk] !== r.fp) { toast(`Decisão de outro juiz (chave ${r.fp}). Este torneio usa a chave ${chaves[tk]}.`); return { erro: 'chave' }; }
+  chaves[tk] = r.fp; try { localStorage.setItem('peskar.juizes', JSON.stringify(chaves)); } catch (e) { }
+  if (c.mmApp == null) c.mmApp = c.mm;
+  c.decisao = { status: p.st === 'R' ? 'recusada' : p.st === 'A' ? 'ajustada' : 'homologada', mm: p.mm || null, motivo: p.mot || null, obs: p.obs || null, juiz: p.j || null, em: new Date(p.em * 1000).toISOString(), chave: r.fp, recebida: new Date().toISOString() };
+  if (p.st === 'R') c.status = 'reprovada';
+  else { c.status = 'homologada'; if (p.mm) c.mm = p.mm; }
+  saveCaps();
+  toast(p.st === 'R' ? 'Juiz recusou a captura ' + c.id + '.' : `Juiz confirmou: ${cm(c.mm)} cm. Já conta no ranking.`, 3500);
+  go('cap-' + c.id);
+  return { ok: true, c };
+}
+// texto compartilhado do WhatsApp/Telegram para o app (Android)
+async function pullCodigoNativo() {
+  const n = nativeApp(); if (!n || !n.pendingText) return;
+  let t = ''; try { t = n.pendingText() || ''; } catch (e) { }
+  if (t) aplicarCodigoJuiz(t);
+}
+window.onTextoRecebido = pullCodigoNativo;
+document.addEventListener('visibilitychange', () => { if (!document.hidden) pullCodigoNativo(); });
+setTimeout(pullCodigoNativo, 600);
+const DSTAT = { homologada: 'Homologada pelo juiz', ajustada: 'Homologada com ajuste', recusada: 'Recusada pelo juiz' };
+function boxCodigo() {
+  return `<div class="panel stack" id="cod-box"><div class="eyebrow">Código do juiz</div>
+    <p class="note" style="margin:0">Quando o juiz responder, segure a mensagem no WhatsApp/Telegram → <b>Compartilhar → PESKAR</b>. Ou copie a mensagem e cole aqui:</p>
+    <textarea id="cod-txt" rows="3" placeholder="Cole aqui a mensagem do juiz" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:10px;font:inherit"></textarea>
+    <button class="btn gold" id="cod-ok">Aplicar decisão do juiz</button></div>`;
+}
+function bindCodigo() { const b = $('#cod-ok'); if (b) b.onclick = async () => { b.disabled = true; try { await aplicarCodigoJuiz($('#cod-txt').value); } finally { b.disabled = false; } }; }
 
 // ---------- PERFIL ----------
 const CSTAT = { validacao: 'Em validação', homologada: 'Homologada', refazer: 'Refazer foto', reprovada: 'Reprovada', treino: 'Treino' };
@@ -1821,6 +1903,7 @@ function renderPerfil() {
   <div class="section"><h2>Minhas inscrições</h2>${myT.map(tcard).join('') || '<div class="empty panel">Você ainda não se inscreveu. <button class="btn gold sm" data-go="torneios" style="margin-top:10px">Ver torneios</button></div>'}</div>
   <div class="section"><h2>Minhas capturas</h2>${capturas.map(c => `
     <button class="cap" data-cap="${esc(c.id)}"><img alt="" src="${c.img}"><div><div class="t">${cm(c.mm)} cm</div><div class="s">${esc(c.especie)} · ${fmtD(new Date(c.at))}${c.torneioId && tById(c.torneioId) ? ' · ' + esc(tById(c.torneioId).nome) : ''}</div><span class="chip ${c.status}">${CSTAT[c.status]}</span>${c.video ? ' <span class="chip sp">Vídeo</span>' : ''}</div></button>`).join('') || '<div class="empty panel">Nenhuma captura ainda.</div>'}</div>
+  ${capturas.some(c => c.video && !c.decisao) ? `<div class="section">${boxCodigo()}</div>` : ''}
   <div class="section"><h2>Réguas PESKAR</h2>
     <div class="ruler-img"><img alt="Régua PESKAR de 110 cm" src="${RULER_IMG}"></div>
     <div class="panel"><ul class="checks">
@@ -1830,7 +1913,7 @@ function renderPerfil() {
       <li>A régua de 1 m antiga continua valendo.</li>
     </ul></div></div>
   <div class="section"><h2>Conta PESKAR</h2><div class="panel"><p style="margin:0">Nesta versão de teste, inscrições, capturas e ranking ficam salvos neste aparelho. A próxima etapa é ligar com a sua conta do app PESKAR para valer em todos os celulares.</p></div></div>`;
-  bindCards();
+  bindCards(); bindCodigo();
   view.querySelectorAll('[data-cap]').forEach(b => b.onclick = () => go('cap-' + b.dataset.cap));
   view.querySelectorAll('[data-go]').forEach(b => b.onclick = () => go(b.dataset.go));
 }
@@ -1854,16 +1937,20 @@ function renderCap(id) {
     <dt>Local</dt><dd>${esc(fmtGeo(c.geo && (c.geo.inicio || c.geo.fim)))}</dd>
     <dt>Assinatura</dt><dd style="font-family:monospace;font-size:12px;word-break:break-all">${esc((c.video.sha256 || '').slice(0, 24))}…</dd>` : ''}
   </dl>
-  ${c.video ? '<button class="btn gold" id="btn-exp" style="width:100%;margin-bottom:12px">Enviar vídeo e medida para revisão</button>' : ''}
-  ${t ? `<div class="panel stack"><div class="eyebrow">Simular decisão do juiz (teste)</div>
+  ${c.video && !c.decisao ? '<button class="btn gold" id="btn-exp" style="width:100%;margin-bottom:12px">Enviar para o juiz (WhatsApp / Telegram)</button>' : ''}
+  ${c.decisao ? `<div class="panel stack" style="border-left:6px solid ${c.decisao.status === 'recusada' ? 'var(--bad)' : 'var(--ok)'}"><div class="eyebrow">Decisão do juiz</div>
+    <h2>${c.decisao.status === 'recusada' ? 'Captura recusada' : cm(c.mm) + ' cm confirmados'}</h2>
+    <p class="note" style="margin:0">${DSTAT[c.decisao.status]}${c.decisao.status === 'ajustada' ? ' (app mediu ' + cm(c.mmApp) + ' cm)' : ''}${c.decisao.motivo ? ' · ' + esc(c.decisao.motivo) : ''}${c.decisao.obs ? ' · ' + esc(c.decisao.obs) : ''}<br>${esc(c.decisao.juiz || 'Juiz')} · ${new Date(c.decisao.em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} · chave ${esc(c.decisao.chave)}</p></div>` : (c.video ? boxCodigo() : '')}
+  ${t && !c.video ? `<div class="panel stack"><div class="eyebrow">Simular decisão do juiz (teste)</div>
     <div class="row">${['validacao', 'homologada', 'refazer', 'reprovada'].map(k => `<button class="btn ghost sm" data-st="${k}" ${k === c.status ? 'disabled' : ''}>${CSTAT[k]}</button>`).join('')}</div></div>` : ''}
   <div class="row" style="margin-top:14px">${t ? `<button class="btn ghost" data-go="ranking-${t.id}">Ranking</button>` : ''}<button class="btn ghost" id="btn-del">Apagar</button></div>
   <div id="confirm"></div>`;
   view.querySelectorAll('[data-go]').forEach(b => b.onclick = () => go(b.dataset.go));
   if (c.video) {
     IDB.get(c.id + ':video').then(b => { const v = $('#cap-video'); if (v && b) v.src = URL.createObjectURL(b); else if (v) v.replaceWith(Object.assign(document.createElement('p'), { className: 'note', textContent: 'Vídeo não encontrado neste aparelho.' })); }).catch(() => { });
-    $('#btn-exp').onclick = () => exportCap(c, $('#btn-exp'));
+    if ($('#btn-exp')) $('#btn-exp').onclick = () => exportCap(c, $('#btn-exp'));
   }
+  bindCodigo();
   view.querySelectorAll('[data-st]').forEach(b => b.onclick = () => { c.status = b.dataset.st; saveCaps(); toast(c.status === 'homologada' ? 'Homologada: já conta no ranking.' : 'Status atualizado.'); renderCap(id); });
   $('#btn-del').onclick = () => {
     $('#confirm').innerHTML = `<div class="panel" style="margin-top:12px"><p style="margin-top:0">Apagar esta captura do aparelho?</p><div class="row"><button class="btn ghost" id="no">Cancelar</button><button class="btn gold" id="yes">Apagar</button></div></div>`;
