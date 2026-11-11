@@ -7,7 +7,11 @@ import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.util.Base64;
+import android.view.WindowManager;
 import android.provider.MediaStore;
+import android.webkit.GeolocationPermissions;
+import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -21,6 +25,10 @@ import androidx.core.content.FileProvider;
 import androidx.webkit.WebViewAssetLoader;
 
 import java.io.File;
+import java.io.FileOutputStream;
+import java.util.ArrayList;
+
+import org.json.JSONArray;
 
 /**
  * PESKAR Régua 2.0 — casca Android.
@@ -32,6 +40,7 @@ public class MainActivity extends Activity {
     private static final int REQ_CAMERA = 10;
     private static final int REQ_FILE = 11;
     private static final int REQ_CAMERA_PHOTO = 12;
+    private static final int REQ_LOCATION = 13;
     private static final String START_URL = "https://appassets.androidplatform.net/assets/index.html";
 
     private WebView webView;
@@ -39,6 +48,8 @@ public class MainActivity extends Activity {
     private ValueCallback<Uri[]> fileCallback;
     private Uri cameraUri;
     private boolean pendingCapture;
+    private String pendingGeoOrigin;
+    private GeolocationPermissions.Callback pendingGeoCallback;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -60,6 +71,8 @@ public class MainActivity extends Activity {
         s.setMediaPlaybackRequiresUserGesture(false);
         s.setAllowFileAccess(false);
         s.setAllowContentAccess(true);
+        s.setGeolocationEnabled(true);
+        webView.addJavascriptInterface(new Bridge(), "PeskarNative");
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
@@ -87,6 +100,18 @@ public class MainActivity extends Activity {
                         requestPermissions(new String[]{Manifest.permission.CAMERA}, REQ_CAMERA);
                     }
                 });
+            }
+
+            @Override
+            public void onGeolocationPermissionsShowPrompt(String origin, GeolocationPermissions.Callback callback) {
+                if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                        || checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                    callback.invoke(origin, true, false);
+                } else {
+                    pendingGeoOrigin = origin;
+                    pendingGeoCallback = callback;
+                    requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION}, REQ_LOCATION);
+                }
             }
 
             @Override
@@ -157,6 +182,13 @@ public class MainActivity extends Activity {
             }
             pendingPermission = null;
         }
+        if (requestCode == REQ_LOCATION && pendingGeoCallback != null) {
+            boolean ok = false;
+            for (int r : results) if (r == PackageManager.PERMISSION_GRANTED) ok = true;
+            pendingGeoCallback.invoke(pendingGeoOrigin, ok, false);
+            pendingGeoCallback = null;
+            pendingGeoOrigin = null;
+        }
         if (requestCode == REQ_CAMERA_PHOTO && pendingCapture) {
             pendingCapture = false;
             openChooser(true);
@@ -188,5 +220,82 @@ public class MainActivity extends Activity {
     public void onBackPressed() {
         if (webView.canGoBack()) webView.goBack();
         else super.onBackPressed();
+    }
+
+    /** Ponte JS -> Android: monta os arquivos do pacote de revisão e abre o compartilhamento. */
+    private class Bridge {
+        private FileOutputStream out;
+
+        private File exportDir() {
+            File dir = new File(getCacheDir(), "export");
+            if (!dir.exists()) dir.mkdirs();
+            return dir;
+        }
+
+        @JavascriptInterface
+        public void reset() {
+            closeQuietly();
+            File[] old = exportDir().listFiles();
+            if (old != null) for (File f : old) f.delete();
+        }
+
+        @JavascriptInterface
+        public void begin(String name) {
+            closeQuietly();
+            try {
+                out = new FileOutputStream(new File(exportDir(), new File(name).getName()), false);
+            } catch (Exception e) {
+                out = null;
+            }
+        }
+
+        @JavascriptInterface
+        public void append(String base64) {
+            if (out == null) return;
+            try {
+                out.write(Base64.decode(base64, Base64.DEFAULT));
+            } catch (Exception ignored) { }
+        }
+
+        @JavascriptInterface
+        public void end() {
+            closeQuietly();
+        }
+
+        @JavascriptInterface
+        public void share(String namesJson, String title) {
+            try {
+                JSONArray names = new JSONArray(namesJson);
+                final ArrayList<Uri> uris = new ArrayList<>();
+                for (int i = 0; i < names.length(); i++) {
+                    File f = new File(exportDir(), new File(names.getString(i)).getName());
+                    if (f.exists()) uris.add(FileProvider.getUriForFile(MainActivity.this, getPackageName() + ".fotos", f));
+                }
+                final String t = title;
+                runOnUiThread(() -> {
+                    Intent send = new Intent(Intent.ACTION_SEND_MULTIPLE);
+                    send.setType("*/*");
+                    send.putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris);
+                    send.putExtra(Intent.EXTRA_SUBJECT, t);
+                    send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    try { startActivity(Intent.createChooser(send, t)); } catch (Exception ignored) { }
+                });
+            } catch (Exception ignored) { }
+        }
+
+        @JavascriptInterface
+        public void keepAwake(final boolean on) {
+            runOnUiThread(() -> {
+                if (on) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            });
+        }
+
+        private void closeQuietly() {
+            if (out != null) {
+                try { out.close(); } catch (Exception ignored) { }
+                out = null;
+            }
+        }
     }
 }
