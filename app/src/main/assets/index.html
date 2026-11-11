@@ -348,6 +348,8 @@ nav.tabs .measure-tab[aria-current="page"] .ring{background:var(--gold2)}
     return [...ps].sort((a, b) => a - b);
   };
   PK.SIZES = [500, 700, 900, 1100];
+  PK.OF_X = [18, 200, 350, 500, 682];  // régua oficial 70x15: centros dos quadrados (ids 22-26 em cima, 42-46 embaixo)
+  const isOF = id => (id >= 22 && id <= 26) || (id >= 42 && id <= 46);
   PK.model = function (family, L) {
     if (family === 'A4') return {
       family: 'A4', name: 'Régua A4 (25 cm)', scaleMm: 250, height: 108, centerLine: 54,
@@ -360,6 +362,12 @@ nav.tabs .measure-tab[aria-current="page"] .ring{background:var(--gold2)}
       board: { x0: -60, y0: -70, x1: 1060, y1: 250 }, marker: 36,
       markers: [[0, 11, -53], [1, 482, -53], [2, 953, -53], [3, 11, 205], [4, 482, 205], [5, 953, 205]].map(([id, x, y]) => ({ id, x, y, s: 36 })),
       qr: { x: 890, y: -55, size: 40 }
+    };
+    if (family === 'OF') return { // formato da régua oficial de torneio: 700 x 150 mm, zero na borda (batente de metal)
+      family: 'OF', name: 'Régua oficial 70 × 15 cm', scaleMm: 700, height: 82, centerLine: 41,
+      board: { x0: 0, y0: -34, x1: 700, y1: 116 }, marker: 28,
+      markers: PK.OF_X.map((x, i) => ({ id: 22 + i, x: x - 14, y: -17 - 14, s: 28 })).concat(PK.OF_X.map((x, i) => ({ id: 42 + i, x: x - 14, y: 99 - 14, s: 28 }))),
+      qr: null
     };
     L = L || 1000;
     const S = PK.STD, ps = PK.stdPositions(L), mk = [];
@@ -375,6 +383,7 @@ nav.tabs .measure-tab[aria-current="page"] .ring{background:var(--gold2)}
     const S = PK.STD;
     if (id >= 0 && id <= 5) return PK.model('R2').markers[id];
     if (id >= 6 && id <= 9) return PK.model('A4').markers[id - 6];
+    if (isOF(id)) { const i = id >= 42 ? id - 42 : id - 22; return { id, x: PK.OF_X[i] - 14, y: (id >= 42 ? 99 : -17) - 14, s: 28 }; }
     if (id >= S.idTop && id < S.idBot) return { id, x: (id - S.idTop) * S.step - S.marker / 2, y: S.topY - S.marker / 2, s: S.marker };
     if (id >= S.idBot && id < 50) return { id, x: (id - S.idBot) * S.step - S.marker / 2, y: S.botY - S.marker / 2, s: S.marker };
     return null;
@@ -383,6 +392,7 @@ nav.tabs .measure-tab[aria-current="page"] .ring{background:var(--gold2)}
     const m = /^PESKAR:R3-(\d+)-/.exec(txt || ''); if (m) return { family: 'R3', L: +m[1] * 10 };
     if (/^PESKAR:R2-1M-/.test(txt || '')) return { family: 'R2', L: 1000 };
     if (/^PESKAR:A4-/.test(txt || '')) return { family: 'A4', L: 250 };
+    if (/^PESKAR:OF70-/.test(txt || '')) return { family: 'OF', L: 700 };
     return null;
   };
   PK.RULER = PK.model('R3', 1000);   // modelo padrão até a foto dizer qual é
@@ -749,7 +759,7 @@ nav.tabs .measure-tab[aria-current="page"] .ring{background:var(--gold2)}
     opts = opts || {};
     let markers = PK.detectAll(g, w, h, Object.assign({}, opts, { expect: opts.expect || (opts.lengthMm ? PK.model('R3', opts.lengthMm).markers.length : 6) }));
     // família da régua: padrão R3 (ids 10-49) ou modelo antigo R2 (ids 0-5)
-    const fam = { R3: markers.filter(m => m.id >= 10), R2: markers.filter(m => m.id <= 5), A4: markers.filter(m => m.id >= 6 && m.id <= 9) };
+    const fam = { R3: markers.filter(m => m.id >= 10 && !isOF(m.id)), OF: markers.filter(m => isOF(m.id)), R2: markers.filter(m => m.id <= 5), A4: markers.filter(m => m.id >= 6 && m.id <= 9) };
     const family = opts.family || Object.keys(fam).sort((a, b) => fam[b].length - fam[a].length)[0];
     markers = fam[family];
     let L = opts.lengthMm;
@@ -853,7 +863,7 @@ nav.tabs .measure-tab[aria-current="page"] .ring{background:var(--gold2)}
     const out = { ok: false, notes: [] };
     if (!res || !res.H || !res.ruler) return out;
     const R = res.ruler, Hi = res.Hinv, L = R.scaleMm, cl = R.centerLine;
-    const half = R.family === 'A4' ? 23 : R.family === 'R3' ? 38 : Math.round(R.height * 0.24);
+    const half = R.family === 'A4' ? 23 : R.family === 'R3' ? 38 : R.family === 'OF' ? 21 : Math.round(R.height * 0.24);
     const q = 0.5, x0 = 0.5, x1 = L - 0.5, y0 = cl - half, y1 = cl + half;
     const W = Math.floor((x1 - x0) / q) + 1, Hh = Math.floor((y1 - y0) / q) + 1, N = W * Hh;
     const sample = (mx, my, o) => {
@@ -1591,7 +1601,7 @@ function renderMedir() {
       <select id="m-t">${comp.map(c => `<option value="${c.id}" ${c.id === S.medirT ? 'selected' : ''}>${esc(c.nome)} (ao vivo)</option>`).join('')}<option value="" ${!S.medirT ? 'selected' : ''}>Treino livre (não vale para ranking)</option></select></div>
     ${liveNot.map(l => `<div class="panel" style="display:flex;gap:12px;align-items:center"><span class="chip live">Ao vivo</span><div style="flex:1;min-width:0;font-size:13.5px">Inscreva-se em <b>${esc(l.nome)}</b> para postar no ranking.</div><button class="btn gold sm" data-go="inscricao-${l.id}">Inscrever</button></div>`).join('')}
     <div class="field"><label for="m-regua">Régua</label>
-      <select id="m-regua">${[['', 'Reconhecer automaticamente'], ['500', 'Régua 50 cm'], ['700', 'Régua 70 cm'], ['900', 'Régua 90 cm'], ['1100', 'Régua 110 cm'], ['A4', 'Régua A4 (25 cm)'], ['R2', 'Régua 1 m (modelo antigo)']].map(([v, l]) => `<option value="${v}" ${String(store.get('regua', '')) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      <select id="m-regua">${[['', 'Reconhecer automaticamente'], ['500', 'Régua 50 cm'], ['700', 'Régua 70 cm'], ['900', 'Régua 90 cm'], ['1100', 'Régua 110 cm'], ['OF', 'Oficial de torneio 70 × 15 cm'], ['A4', 'Régua A4 (25 cm)'], ['R2', 'Régua 1 m (modelo antigo)']].map(([v, l]) => `<option value="${v}" ${String(store.get('regua', '')) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
     <div class="field"><label for="m-esp">Espécie</label>
       <select id="m-esp">${ESP.map(e => `<option ${e === S.especie ? 'selected' : ''}>${e}</option>`).join('')}</select></div>
     <div class="panel"><ul class="checks">
@@ -1615,10 +1625,10 @@ function renderMedir() {
   view.querySelectorAll('[data-go]').forEach(b => b.onclick = () => go(b.dataset.go));
 }
 // régua escolhida: número (mm) do padrão R3, 'R2' (1 m antiga) ou '' (automático)
-function rulerL() { const v = store.get('regua', ''); return v === 'R2' || v === 'A4' ? v : (+v || ''); }
+function rulerL() { const v = store.get('regua', ''); return v === 'R2' || v === 'A4' || v === 'OF' ? v : (+v || ''); }
 function rulerOpts(extra) {
   const v = rulerL(), o = Object.assign({}, extra || {});
-  if (v === 'R2' || v === 'A4') o.family = v; else if (v) { o.family = 'R3'; o.lengthMm = v; }
+  if (v === 'R2' || v === 'A4' || v === 'OF') o.family = v; else if (v) { o.family = 'R3'; o.lengthMm = v; }
   return o;
 }
 function camAvailable() { return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia); }
@@ -1662,7 +1672,7 @@ function drawHud(res, aw, ah) {
   const dpr = window.devicePixelRatio || 1;
   if (cv.width !== Math.round(W * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
   const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
-  const Lg = rulerL() || S.lastL || 900, ratio = rulerL() === 'R2' ? 320 / 1120 : rulerL() === 'A4' || S.lastFam === 'A4' ? 210 / 297 : 250 / ((typeof Lg === 'number' ? Lg : 1000) + 120);
+  const Lg = rulerL() || S.lastL || 900, ratio = rulerL() === 'R2' ? 320 / 1120 : rulerL() === 'OF' || (!rulerL() && S.lastFam === 'OF') ? 150 / 700 : rulerL() === 'A4' || S.lastFam === 'A4' ? 210 / 297 : 250 / ((typeof Lg === 'number' ? Lg : 1000) + 120);
   const portrait = H >= W;
   let gw, gh;
   if (portrait) { gh = H * 0.92; gw = gh * ratio; if (gw > W * 0.9) { gw = W * 0.9; gh = gw / ratio; } }
