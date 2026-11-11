@@ -717,7 +717,8 @@ nav.tabs .measure-tab[aria-current="page"] .ring{background:var(--gold2)}
     const add = (list, sc) => {
       for (const m of list) {
         if (sc !== 1) m.corners = m.corners.map(p => [p[0] / sc, p[1] / sc]);
-        if (!byId[m.id] || m.contrast > byId[m.id].contrast) byId[m.id] = m;
+        const o = byId[m.id]; // leitura exata ganha da leitura com 1 bit de diferença
+        if (!o || m.dist < o.dist || (m.dist === o.dist && m.contrast > o.contrast)) byId[m.id] = m;
       }
     };
     add(PK.detectMarkers(g, w, h, 0.78), 1);
@@ -763,12 +764,31 @@ nav.tabs .measure-tab[aria-current="page"] .ring{background:var(--gold2)}
       res.messages.push(markers.length ? 'Só 1 quadrado visível. Mostre a régua inteira.' : 'Régua não encontrada. Encaixe a régua inteira na moldura.');
       return res;
     }
-    const src = [], dst = [];
-    for (const m of markers) {
-      const mm = PK.markerCornersMm(PK.markerGeom(m.id));
-      for (let i = 0; i < 4; i++) { src.push(m.corners[i]); dst.push(mm[i]); }
+    // ajuste robusto: se um quadrado não bate com os outros (falso positivo na estampa do peixe, reflexo),
+    // tira o pior e recalcula, enquanto sobrarem pelo menos 3
+    const fit = list => {
+      const src = [], dst = [];
+      for (const m of list) { const mm = PK.markerCornersMm(PK.markerGeom(m.id)); for (let i = 0; i < 4; i++) { src.push(m.corners[i]); dst.push(mm[i]); } }
+      const Hm = PK.homography(src, dst); if (!Hm) return null;
+      const errs = list.map((m, j) => { let e = 0; for (let i = 0; i < 4; i++) { const p = PK.apply(Hm, src[j * 4 + i][0], src[j * 4 + i][1]); e += Math.hypot(p[0] - dst[j * 4 + i][0], p[1] - dst[j * 4 + i][1]); } return e / 4; });
+      return { Hm, src, dst, errs, rms: Math.sqrt(errs.reduce((a, e) => a + e * e, 0) / errs.length) };
+    };
+    let F = fit(markers);
+    if (F && F.rms > 1.5 && markers.length >= 3) {
+      // consenso: para cada par de quadrados, ajusta e conta quantos outros concordam (erro < 3 mm)
+      let bestSet = null;
+      for (let i = 0; i < markers.length; i++) for (let j = i + 1; j < markers.length; j++) {
+        const Fp = fit([markers[i], markers[j]]); if (!Fp) continue;
+        const inl = markers.filter(m => { const mm = PK.markerCornersMm(PK.markerGeom(m.id)); let e = 0; for (let k = 0; k < 4; k++) { const p = PK.apply(Fp.Hm, m.corners[k][0], m.corners[k][1]); e += Math.hypot(p[0] - mm[k][0], p[1] - mm[k][1]); } return e / 4 < 3; });
+        if (!bestSet || inl.length > bestSet.length) bestSet = inl;
+      }
+      if (bestSet && bestSet.length >= 2 && bestSet.length < markers.length) {
+        const F2 = fit(bestSet);
+        if (F2 && F2.rms < F.rms) { markers = bestSet; res.markers = markers; F = F2; }
+      }
     }
-    const H = PK.homography(src, dst);
+    const src = F ? F.src : [], dst = F ? F.dst : [];
+    const H = F ? F.Hm : null;
     if (!H) { res.messages.push('Não foi possível calibrar a foto.'); return res; }
     res.H = H; res.Hinv = inv3(H);
     let se = 0;
@@ -821,6 +841,184 @@ nav.tabs .measure-tab[aria-current="page"] .ring{background:var(--gold2)}
   // Converte ponto da imagem para mm na régua
   PK.toMm = function (res, x, y) { return PK.apply(res.H, x, y); };
   PK.toPx = function (res, x, y) { return PK.apply(res.Hinv, x, y); };
+
+  // ---------- MEDIÇÃO AUTOMÁTICA DO PEIXE ----------
+  // 1) "Desentorta" a área do peixe da régua para uma grade em mm (0,5 mm) usando a homografia dos quadrados.
+  // 2) Aprende a cor do fundo da régua na própria foto (moda global + correção local por trechos de 25 mm),
+  //    o que tolera sombra, sol e a régua A4 impressa em casa.
+  // 3) Separa o peixe (Otsu na distância de cor), limpa linhas finas da arte e escolhe a mancha sobre a linha central.
+  // 4) Fim da cauda = ponto mais distante do zero; refinado ao décimo de mm no meio-caminho entre peixe e fundo
+  //    (pega nadadeira translúcida). Focinho = ponta mais próxima do batente.
+  PK.autoFish = function (rgba, w, h, res, dbg) {
+    const out = { ok: false, notes: [] };
+    if (!res || !res.H || !res.ruler) return out;
+    const R = res.ruler, Hi = res.Hinv, L = R.scaleMm, cl = R.centerLine;
+    const half = R.family === 'A4' ? 23 : R.family === 'R3' ? 38 : Math.round(R.height * 0.24);
+    const q = 0.5, x0 = 0.5, x1 = L - 0.5, y0 = cl - half, y1 = cl + half;
+    const W = Math.floor((x1 - x0) / q) + 1, Hh = Math.floor((y1 - y0) / q) + 1, N = W * Hh;
+    const sample = (mx, my, o) => {
+      const ww = Hi[2][0] * mx + Hi[2][1] * my + Hi[2][2];
+      const px = (Hi[0][0] * mx + Hi[0][1] * my + Hi[0][2]) / ww, py = (Hi[1][0] * mx + Hi[1][1] * my + Hi[1][2]) / ww;
+      if (px < 0 || py < 0 || px >= w - 1 || py >= h - 1) { o[0] = o[1] = o[2] = -1; return false; }
+      const ix = px | 0, iy = py | 0, fx = px - ix, fy = py - iy, i = (iy * w + ix) * 4, j = i + w * 4;
+      for (let c = 0; c < 3; c++) o[c] = (rgba[i + c] * (1 - fx) + rgba[i + 4 + c] * fx) * (1 - fy) + (rgba[j + c] * (1 - fx) + rgba[j + 4 + c] * fx) * fy;
+      return true;
+    };
+    const rgb = new Float32Array(N * 3), valid = new Uint8Array(N), tmp = [0, 0, 0];
+    let nvalid = 0;
+    for (let r = 0; r < Hh; r++) for (let c = 0; c < W; c++) {
+      const k = r * W + c;
+      if (sample(x0 + c * q, y0 + r * q, tmp)) { rgb[k * 3] = tmp[0]; rgb[k * 3 + 1] = tmp[1]; rgb[k * 3 + 2] = tmp[2]; valid[k] = 1; nvalid++; }
+    }
+    if (nvalid < N * 0.5) { out.notes.push('Régua muito cortada na foto.'); return out; }
+    // fundo: a arte da régua é quase preta — cor mediana dos 15% de pixels mais escuros
+    // (funciona mesmo quando o peixe cobre quase toda a área)
+    const lums = []; for (let k = 0; k < N; k += 3) if (valid[k]) lums.push(rgb[k * 3] * 0.3 + rgb[k * 3 + 1] * 0.59 + rgb[k * 3 + 2] * 0.11);
+    lums.sort((u, v) => u - v);
+    const lcut = lums[Math.floor(lums.length * 0.15)];
+    const dk = [[], [], []];
+    for (let k = 0; k < N; k += 3) if (valid[k] && rgb[k * 3] * 0.3 + rgb[k * 3 + 1] * 0.59 + rgb[k * 3 + 2] * 0.11 <= lcut) for (let ch = 0; ch < 3; ch++) dk[ch].push(rgb[k * 3 + ch]);
+    const g0 = dk.map(v => { v.sort((u, w2) => u - w2); return v[v.length >> 1] || 0; });
+    // fundo local por trechos de 25 mm (pixels parecidos com o fundo global)
+    const BW = Math.round(25 / q), nb = Math.ceil(W / BW), loc = [];
+    const dist = (k, b) => { const a = rgb[k * 3] - b[0], e = rgb[k * 3 + 1] - b[1], f = rgb[k * 3 + 2] - b[2]; return Math.sqrt(a * a + e * e + f * f); };
+    for (let bi = 0; bi < nb; bi++) {
+      const acc = [[], [], []];
+      for (let r = 0; r < Hh; r += 2) for (let c = bi * BW; c < Math.min(W, (bi + 1) * BW); c += 2) {
+        const k = r * W + c; if (valid[k] && dist(k, g0) < 45) for (let ch = 0; ch < 3; ch++) acc[ch].push(rgb[k * 3 + ch]);
+      }
+      const n = acc[0].length, tot = Math.ceil(Hh / 2) * Math.ceil(Math.min(BW, W - bi * BW) / 2);
+      if (n >= tot * 0.12) loc[bi] = acc.map(a => { a.sort((u, v) => u - v); return a[a.length >> 1]; });
+      else loc[bi] = null;
+    }
+    for (let bi = 0; bi < nb; bi++) if (!loc[bi]) { // vizinho mais próximo com fundo visível
+      let d = 1; while (d < nb && !loc[bi - d] && !loc[bi + d]) d++;
+      loc[bi] = (loc[bi - d] && loc[bi + d]) ? loc[bi - d].map((v, i) => (v + loc[bi + d][i]) / 2) : (loc[bi - d] || loc[bi + d] || g0);
+    }
+    const bgAt = c => { const t = c / BW - 0.5, i = Math.max(0, Math.min(nb - 1, Math.floor(t))), j = Math.min(nb - 1, i + 1), f = Math.max(0, Math.min(1, t - i)); return [0, 1, 2].map(ch => loc[i][ch] * (1 - f) + loc[j][ch] * f); };
+    const bgc = []; for (let c = 0; c < W; c++) bgc.push(bgAt(c));
+    const D = new Float32Array(N), dh = new Uint32Array(256);
+    for (let r = 0; r < Hh; r++) for (let c = 0; c < W; c++) {
+      const k = r * W + c; if (!valid[k]) continue;
+      const v = Math.min(255, dist(k, bgc[c])); D[k] = v; dh[v | 0]++;
+    }
+    // limiar de Otsu (com mínimo para não pegar ruído de impressão)
+    let sum = 0, tot = 0; for (let i = 0; i < 256; i++) { sum += i * dh[i]; tot += dh[i]; }
+    let sB = 0, wB = 0, mx = 0, thr = 30;
+    for (let i = 0; i < 256; i++) { wB += dh[i]; if (!wB) continue; const wF = tot - wB; if (!wF) break; sB += i * dh[i]; const mB = sB / wB, mF = (sum - sB) / wF, v = wB * wF * (mB - mF) * (mB - mF); if (v > mx) { mx = v; thr = i; } }
+    thr = Math.max(28, Math.min(thr, 90));
+    let M = new Uint8Array(N); for (let k = 0; k < N; k++) M[k] = D[k] > thr ? 1 : 0;
+    const morph = (A, rad, dil) => { // quadrado (2rad+1), separável
+      const B = new Uint8Array(N), C = new Uint8Array(N);
+      for (let r = 0; r < Hh; r++) for (let c = 0; c < W; c++) { let v = dil ? 0 : 1; for (let d = -rad; d <= rad; d++) { const cc = c + d; const a = cc < 0 || cc >= W ? (dil ? 0 : 1) : A[r * W + cc]; if (dil ? a : !a) { v = dil ? 1 : 0; break; } } B[r * W + c] = v; }
+      for (let r = 0; r < Hh; r++) for (let c = 0; c < W; c++) { let v = dil ? 0 : 1; for (let d = -rad; d <= rad; d++) { const rr = r + d; const a = rr < 0 || rr >= Hh ? (dil ? 0 : 1) : B[rr * W + c]; if (dil ? a : !a) { v = dil ? 1 : 0; break; } } C[r * W + c] = v; }
+      return C;
+    };
+    const M0 = M.slice(); // máscara crua (antes da limpeza), usada para seguir pontas finas da cauda
+    M = morph(morph(M, 1, false), 1, true);   // abertura: tira grade, linha central e letras finas
+    M = morph(morph(M, 3, true), 3, false);   // fechamento: junta faixas escuras e nadadeiras
+    // componentes conexos; escolhe o que mais ocupa a faixa central
+    const lab = new Int32Array(N).fill(-1), comps = [], stack = [];
+    const cr0 = Math.round((cl - y0 - 0.14 * half * 2) / q), cr1 = Math.round((cl - y0 + 0.14 * half * 2) / q);
+    for (let k0 = 0; k0 < N; k0++) {
+      if (!M[k0] || lab[k0] >= 0) continue;
+      const id = comps.length, cp = { n: 0, core: 0, minc: W, maxc: -1 }; lab[k0] = id; stack.push(k0);
+      while (stack.length) {
+        const k = stack.pop(), r = (k / W) | 0, c = k - r * W; cp.n++;
+        if (r >= cr0 && r <= cr1) cp.core++;
+        if (c < cp.minc) cp.minc = c; if (c > cp.maxc) cp.maxc = c;
+        if (c > 0 && M[k - 1] && lab[k - 1] < 0) { lab[k - 1] = id; stack.push(k - 1); }
+        if (c < W - 1 && M[k + 1] && lab[k + 1] < 0) { lab[k + 1] = id; stack.push(k + 1); }
+        if (r > 0 && M[k - W] && lab[k - W] < 0) { lab[k - W] = id; stack.push(k - W); }
+        if (r < Hh - 1 && M[k + W] && lab[k + W] < 0) { lab[k + W] = id; stack.push(k + W); }
+      }
+      comps.push(cp);
+    }
+    let fi = -1; comps.forEach((cp, i) => { if (cp.core > 0 && (fi < 0 || cp.core > comps[fi].core)) fi = i; });
+    if (dbg) Object.assign(dbg, { W, Hh, M, lab, fi, D, thr, comps, g0, loc });
+    if (fi < 0 || comps[fi].core * q * q < 400 || (comps[fi].maxc - comps[fi].minc) * q < 60) { out.notes.push('Não encontrei o peixe sobre a linha central.'); return out; }
+    if (dbg) Object.assign(dbg, { W, Hh, M, lab, fi, D, thr, comps, g0, loc });
+    const inFish = new Uint8Array(comps.length);
+    if (fi >= 0) {
+      inFish[fi] = 1; let lo = comps[fi].minc, hi = comps[fi].maxc, grew = true;
+      while (grew) { grew = false; comps.forEach((cp, i) => { if (!inFish[i] && cp.core >= Math.max(30, comps[fi].core * 0.06) && cp.minc * q < hi * q + 60 && cp.maxc * q > lo * q - 60) { inFish[i] = 1; lo = Math.min(lo, cp.minc); hi = Math.max(hi, cp.maxc); grew = true; } }); }
+      comps[fi] = Object.assign({}, comps[fi], { minc: lo, maxc: hi, core: comps.reduce((a2, cp, i) => a2 + (inFish[i] ? cp.core : 0), 0) });
+    }
+    const F = comps[fi];
+    // ponta da cauda: linhas onde a mancha chega a até 1 mm do máximo
+    const rowsAt = (cTarget, dir) => { const rs = []; for (let r = 0; r < Hh; r++) { for (let d = 0; d <= 2; d++) { const c = cTarget - dir * d; if (c >= 0 && c < W && lab[r * W + c] >= 0 && inFish[lab[r * W + c]]) { rs.push(r); break; } } } return rs; };
+    const med = a => { const b = a.slice().sort((u, v) => u - v); return b[b.length >> 1]; };
+    const refine = (cEdge, rTip, dir) => {
+      // perfil ao longo do eixo, média de ±1 mm em y; 0,1 mm de passo, na resolução da foto
+      const prof = [], step = 0.1, xa = x0 + cEdge * q - dir * 12, xb = x0 + cEdge * q + dir * 10, my = y0 + rTip * q;
+      for (let x = xa; dir > 0 ? x <= xb : x >= xb; x += dir * step) {
+        let s = 0, n = 0;
+        for (let dy = -1; dy <= 1; dy += 0.5) { if (sample(x, my + dy, tmp)) { const b = bgAt((x - x0) / q); s += Math.sqrt((tmp[0] - b[0]) ** 2 + (tmp[1] - b[1]) ** 2 + (tmp[2] - b[2]) ** 2); n++; } }
+        prof.push([x, n ? s / n : 0]);
+      }
+      const inF = prof.filter(p => dir * (p[0] - (xa + dir * 2)) >= 0 && dir * (p[0] - (xa + dir * 8)) <= 0).map(p => p[1]);
+      const inB = prof.filter(p => dir * (p[0] - (xb - dir * 6)) >= 0).map(p => p[1]);
+      if (!inF.length || !inB.length) return { x: x0 + cEdge * q, contrast: 0 };
+      const fL = med(inF), bL = med(inB), cut = bL + 0.45 * (fL - bL);
+      let xe = x0 + cEdge * q;
+      for (let i = 0; i < prof.length; i++) if (prof[i][1] >= cut) xe = prof[i][0]; else if (dir * (prof[i][0] - (x0 + cEdge * q)) > 4) break;
+      return { x: xe, contrast: fL - bL };
+    };
+    // cauda: segue além da mancha com limiar mais sensível (nadadeira escura ou translúcida), até 60 mm
+    {
+      const thr2 = Math.max(14, thr * 0.45), rb0 = Math.max(0, Math.round((cl - y0 - half * 0.7) / q)), rb1 = Math.min(Hh - 1, Math.round((cl - y0 + half * 0.7) / q));
+      let c = F.maxc, gap = 0, lastGood = F.maxc;
+      while (c < W - 1 && (c - F.maxc) * q < 60) {
+        c++; let hit = 0, n = 0;
+        for (let r = rb0; r <= rb1; r++) { const k = r * W + c; if (valid[k]) { n++; if (D[k] > thr2) hit++; } }
+        const run = n ? hit / n : 0;
+        if (run > 0.12) { lastGood = c; gap = 0; } else if (++gap * q > 2) break;
+      }
+      if (lastGood > F.maxc) {
+        for (let cc = F.maxc + 1; cc <= lastGood; cc++) for (let r = rb0; r <= rb1; r++) { const k = r * W + cc; if (D[k] > thr2 && lab[k] < 0) lab[k] = fi; }
+        if ((lastGood - F.maxc) * q > 3) out.notes.push('Ponta da cauda pouco visível: confira.');
+        F.maxc = lastGood;
+      }
+    }
+    // ponta fina (lobo pontudo): cresce pela máscara crua a partir da cauda, até 10 mm além
+    {
+      const st = [], seen = new Uint8Array(N), lim = F.maxc + Math.round(10 / q);
+      for (let c = Math.max(0, F.maxc - 4); c <= F.maxc; c++) for (let r = 0; r < Hh; r++) { const k = r * W + c, lb = lab[k]; if (lb >= 0 && inFish[lb]) { st.push(k); seen[k] = 1; } }
+      let mxc = F.maxc;
+      while (st.length) {
+        const k = st.pop(), r = (k / W) | 0, c = k - r * W;
+        if (c > mxc) mxc = c;
+        for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+          const rr = r + dr, cc = c + dc; if (rr < 0 || rr >= Hh || cc < 0 || cc >= W || cc > lim) continue;
+          const kk = rr * W + cc; if (!seen[kk] && M0[kk]) { seen[kk] = 1; lab[kk] = fi; st.push(kk); }
+        }
+      }
+      F.maxc = mxc;
+    }
+    // cauda
+    const tailRows = rowsAt(F.maxc, 1);
+    const rT = med(tailRows.length ? tailRows : [Math.round((cl - y0) / q)]);
+    const rt = refine(F.maxc, rT, 1);
+    let tailMm = Math.min(rt.x, L + 2);
+    // focinho
+    let snoutMm = 0, rS = Math.round((cl - y0) / q);
+    const headRows = rowsAt(F.minc, -1); if (headRows.length) rS = med(headRows);
+    if (F.minc * q > 1.5) snoutMm = Math.max(0, refine(F.minc, rS, -1).x);
+    // confiança
+    let conf = 'alta';
+    // altura do ponto: meio da nadadeira caudal nos últimos 10 mm (não a ponta de um lobo), para o teste de peixe reto
+    let rmin = Hh, rmax = -1;
+    for (let c = Math.max(0, F.maxc - Math.round(10 / q)); c <= F.maxc; c++) for (let r = 0; r < Hh; r++) { const lb = lab[r * W + c]; if (lb >= 0 && inFish[lb]) { if (r < rmin) rmin = r; if (r > rmax) rmax = r; } }
+    const tailYmm = rmax >= 0 ? y0 + (rmin + rmax) / 2 * q : y0 + rT * q, snoutYmm = y0 + rS * q;
+    if (out.notes.length) conf = 'media';
+    if (rt.contrast < 25) { conf = 'media'; out.notes.push('Ponta da cauda com pouco contraste.'); }
+    if (F.maxc >= W - 2) { conf = 'baixa'; out.notes.push('A cauda chega ao fim da escala.'); }
+    const edgeRows = tailRows.filter(r => r <= 1 || r >= Hh - 2).length;
+    if (tailRows.length && edgeRows > tailRows.length * 0.5) { conf = 'baixa'; out.notes.push('Algo encosta na borda da régua perto da cauda (mão ou outro objeto?).'); }
+    Object.assign(out, { ok: true, conf, tailMm: +tailMm.toFixed(1), snoutMm: +snoutMm.toFixed(1), tailYmm, snoutYmm,
+      tail: PK.apply(Hi, tailMm, tailYmm), snout: PK.apply(Hi, snoutMm, snoutYmm), thr, contrast: +rt.contrast.toFixed(1) });
+    return out;
+  };
 
   root.PK = PK;
   if (typeof module !== 'undefined') module.exports = PK;
@@ -1579,7 +1777,15 @@ function processSource(src, sw, sh) {
   }
   r.qr = qr;
   S.shot = { canvas: c, res: r, snout: null, tail: null, at: new Date().toISOString() };
-  if (r.H) { const cl = r.ruler.centerLine; S.shot.snout = PK.toPx(r, 0, cl); S.shot.tail = PK.toPx(r, Math.round(r.ruler.scaleMm * 0.6), cl); }
+  if (r.H) {
+    const cl = r.ruler.centerLine; S.shot.snout = PK.toPx(r, 0, cl); S.shot.tail = PK.toPx(r, Math.round(r.ruler.scaleMm * 0.6), cl);
+    // medição automática: acha focinho e fim da cauda sozinho; o pescador só confere
+    try {
+      const a = PK.autoFish(ctx.getImageData(0, 0, w, h).data, w, h, r);
+      S.shot.auto = a;
+      if (a.ok) { S.shot.tail = a.tail; S.shot.snout = a.snout; }
+    } catch (e) { S.shot.auto = { ok: false, notes: [] }; }
+  }
   S.step = 'review';
   if (location.hash !== '#medir') location.hash = 'medir'; else renderMedir();
   window.scrollTo(0, 0);
@@ -1595,7 +1801,7 @@ function renderReview() {
   const qrTxt = typeof r.qr === 'string' && PK.parseCode(r.qr) ? 'nº ' + r.qr.replace('PESKAR:', '') : r.ruler.name;
   view.innerHTML = `
   <div class="eyebrow">Confira a medida</div>
-  <h1>${r.H ? 'Arraste o ponto verde até a ponta da cauda' : 'Não deu para medir'}</h1>
+  <h1>${r.H ? (sh.auto && sh.auto.ok ? 'Confira o fim da cauda' : 'Arraste o ponto verde até a ponta da cauda') : 'Não deu para medir'}</h1>
   <p class="lead">${r.H ? 'Use a lupa para acertar. O ponto branco marca o focinho, encostado no zero.' : 'O app não encontrou os quadrados de referência no quadro da medida. Grave de novo seguindo as dicas.'}</p>
   ${r.H ? `<div class="tailhelp"><svg viewBox="0 0 92 46" aria-hidden="true"><path d="M4 23 C 20 6, 44 6, 58 20 L 80 8 L 74 23 L 80 38 L 58 26 C 44 40, 20 40, 4 23 Z" fill="#cfe7c4" stroke="#1e9e4a" stroke-width="2"/><path d="M80 8 L74 23 L80 38" fill="none" stroke="#0f5a2e" stroke-width="2"/><line x1="81" y1="2" x2="81" y2="44" stroke="#8ed12e" stroke-width="3"/><circle cx="12" cy="20" r="2" fill="#0f2b1b"/></svg><div><b>Fim da cauda:</b> junte as pontas da nadadeira e marque a ponta mais comprida. A linha verde atravessa a régua nesse ponto.</div></div>` : ''}
   <div class="stage" id="stage" style="margin-top:12px"></div>
@@ -1695,6 +1901,12 @@ function updateMeasure() {
   box.innerHTML = m ? `<div class="measure"><div><div class="k">Medida estimada</div><div class="v">${cm(m.mm)} <small>cm</small></div></div><div class="u">${Math.round(m.mm)} mm<br>± ${(m.unc / 10).toFixed(1).replace('.', ',')} cm</div></div>` : '';
   const items = [], cls = r.status === 'green' ? 'ok' : r.status === 'red' ? 'bad' : '';
   r.messages.forEach(t => items.push(`<li class="${cls}">${esc(t)}</li>`));
+  if (m && S.shot.auto) {
+    const a = S.shot.auto, moved = a.ok && Math.abs(m.mm - a.tailMm) > 1;
+    if (a.ok && !moved) items.push(`<li class="${a.conf === 'alta' ? 'ok' : ''}">Medida automática: o app achou o fim da cauda sozinho. ${a.conf === 'alta' ? 'Confira na lupa.' : esc(a.notes.join(' ')) + ' Arraste o ponto se precisar.'}</li>`);
+    else if (a.ok && moved) items.push(`<li>Ponto ajustado à mão (automático: ${cm(a.tailMm)} cm).</li>`);
+    else items.push('<li>Não achei a cauda sozinho nesta foto. Arraste o ponto verde até a ponta da cauda.</li>');
+  }
   if (m) {
     if (Math.abs(m.snoutMm) > 5) items.push(`<li class="bad">Focinho a ${Math.abs(m.snoutMm).toFixed(0)} mm do zero. Encoste no batente ou ajuste o ponto branco.</li>`);
     const cl = r.ruler.centerLine, dT = Math.abs(m.tailY - cl), dS = Math.abs(m.snoutY - cl);
@@ -1725,6 +1937,7 @@ async function register(cv) {
     id: S.capId || ('C' + Date.now().toString(36).toUpperCase()), at: sh.at, torneioId: t ? t.id : null,
     especie: S.especie || 'Tucunaré', mm: Math.round(m.mm), unc: +m.unc.toFixed(1), snoutMm: +m.snoutMm.toFixed(1),
     desvio: { focinho: Math.round(m.snoutY - cl), cauda: Math.round(m.tailY - cl) },
+    auto: sh.auto && sh.auto.ok ? { mm: sh.auto.tailMm, conf: sh.auto.conf, ajuste_mm: +(m.mm - sh.auto.tailMm).toFixed(1) } : { mm: null },
     quality: r.status, markers: r.markers.length, expected: r.expected || r.ruler.markers.length, qr: typeof r.qr === 'string' && !!PK.parseCode(r.qr), regua: typeof r.qr === 'string' && PK.parseCode(r.qr) ? r.qr.replace('PESKAR:', '') : r.ruler.name,
     pts: { focinho: sh.snout.map(v => +v.toFixed(1)), cauda: sh.tail.map(v => +v.toFixed(1)), quadro: [sh.canvas.width, sh.canvas.height] },
     H: r.H.map(row => row.map(v => +v.toPrecision(8))),
@@ -1765,7 +1978,7 @@ function buildDados(c) {
     torneio: t ? { id: t.id, nome: t.nome, local: t.local } : null,
     pescador: { nome: perfil.nome || null, apelido: (ins && ins.apelido) || perfil.apelido || null, cidade: perfil.cidade || null, inscricao: ins ? ins.numero : null, categoria: ins ? ins.categoria : null },
     especie: c.especie,
-    medida: { mm: c.mm, cm: +(c.mm / 10).toFixed(1), incerteza_mm: c.unc, focinho_do_zero_mm: c.snoutMm, desvio_linha_central_mm: c.desvio || null },
+    medida: { mm: c.mm, cm: +(c.mm / 10).toFixed(1), incerteza_mm: c.unc, focinho_do_zero_mm: c.snoutMm, desvio_linha_central_mm: c.desvio || null, automatica_mm: c.auto ? c.auto.mm : null, confianca_auto: c.auto ? c.auto.conf || null : null, ajuste_manual_mm: c.auto ? c.auto.ajuste_mm == null ? null : c.auto.ajuste_mm : null },
     regua: { modelo: c.regua, qr_conferido: !!c.qr, quadrados_lidos: c.markers, quadrados_esperados: c.expected, qualidade: c.quality },
     pontos_px: c.pts || null, homografia_px_para_mm: c.H || null,
     confirmacoes_do_pescador: c.checks || null,
