@@ -2,11 +2,14 @@ package br.com.peskar.regua;
 
 import android.Manifest;
 import android.app.Activity;
+import android.content.ContentValues;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.util.Base64;
 import android.view.WindowManager;
 import android.provider.MediaStore;
@@ -25,7 +28,10 @@ import androidx.core.content.FileProvider;
 import androidx.webkit.WebViewAssetLoader;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.ArrayList;
 
 import org.json.JSONArray;
@@ -318,6 +324,54 @@ public class MainActivity extends Activity {
                     try { startActivity(Intent.createChooser(send, t)); } catch (Exception ignored) { }
                 });
             } catch (Exception ignored) { }
+        }
+
+        /** Copia arquivos de export/ para a galeria: vídeos em Filmes/PESKAR, fotos em Imagens/PESKAR. Retorna quantos salvou. */
+        @JavascriptInterface
+        public int saveMedia(String namesJson) {
+            closeQuietly();
+            int ok = 0;
+            try {
+                JSONArray names = new JSONArray(namesJson);
+                for (int i = 0; i < names.length(); i++) {
+                    File f = new File(exportDir(), new File(names.getString(i)).getName());
+                    if (!f.exists()) continue;
+                    String n = f.getName().toLowerCase();
+                    boolean video = n.endsWith(".webm") || n.endsWith(".mp4");
+                    String mime = video ? (n.endsWith(".mp4") ? "video/mp4" : "video/webm") : "image/jpeg";
+                    try {
+                        if (Build.VERSION.SDK_INT >= 29) {
+                            ContentValues v = new ContentValues();
+                            v.put(MediaStore.MediaColumns.DISPLAY_NAME, f.getName());
+                            v.put(MediaStore.MediaColumns.MIME_TYPE, mime);
+                            v.put(MediaStore.MediaColumns.RELATIVE_PATH, (video ? Environment.DIRECTORY_MOVIES : Environment.DIRECTORY_PICTURES) + "/PESKAR");
+                            v.put(MediaStore.MediaColumns.IS_PENDING, 1);
+                            Uri coll = video ? MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                                    : MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY);
+                            Uri u = getContentResolver().insert(coll, v);
+                            if (u == null) continue;
+                            try (OutputStream os = getContentResolver().openOutputStream(u); InputStream in = new FileInputStream(f)) {
+                                if (os == null) continue;
+                                byte[] buf = new byte[65536]; int k;
+                                while ((k = in.read(buf)) > 0) os.write(buf, 0, k);
+                            }
+                            ContentValues done = new ContentValues();
+                            done.put(MediaStore.MediaColumns.IS_PENDING, 0);
+                            getContentResolver().update(u, done, null, null);
+                            ok++;
+                        } else {
+                            File dir = new File(getExternalFilesDir(video ? Environment.DIRECTORY_MOVIES : Environment.DIRECTORY_PICTURES), "PESKAR");
+                            if (!dir.exists()) dir.mkdirs();
+                            try (OutputStream os = new FileOutputStream(new File(dir, f.getName())); InputStream in = new FileInputStream(f)) {
+                                byte[] buf = new byte[65536]; int k;
+                                while ((k = in.read(buf)) > 0) os.write(buf, 0, k);
+                            }
+                            ok++;
+                        }
+                    } catch (Exception ignored) { }
+                }
+            } catch (Exception ignored) { }
+            return ok;
         }
 
         @JavascriptInterface
