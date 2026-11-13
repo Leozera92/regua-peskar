@@ -1243,7 +1243,7 @@ function pickMime() {
 async function renderVideo() {
   const t = tById(S.medirT), ins = t && inscricoes[t.id];
   S.capId = S.capId || ('C' + Date.now().toString(36).toUpperCase());
-  S.vid = { phase: 'pronto', marks: [], frame: null, chunks: [], start: 0, lastRes: null, aw: 0, ah: 0,
+  S.vid = { phase: 'pronto', marks: [], frame: null, boca: null, chunks: [], start: 0, lastRes: null, aw: 0, ah: 0,
     auto: { on: store.get('autoCap', '1') !== '0', still: 0, prev: null, prevPts: null, cdStart: 0, fishOk: false, fishT: 0 } };
   view.innerHTML = `
   <h2 style="margin:0 0 4px">Vídeo da medição e soltura</h2>
@@ -1300,6 +1300,7 @@ function videoLoop(ts) {
     const ac = anaCanvas.getContext('2d', { willReadFrequently: true });
     ac.drawImage(v, 0, 0, aw, ah);
     const r = PK.analyze(PK.toGray(ac.getImageData(0, 0, aw, ah).data, aw, ah), aw, ah, rulerOpts({ checkSharp: false, maxUp: 1500 }));
+    if (S.vid.boca && r.H && !zeroVisible(r, aw, ah)) bocaMsgs(r);
     S.vid.lastRes = r; S.vid.aw = aw; S.vid.ah = ah;
     setStatus(r);
     const c = $('#count'); if (c) c.textContent = r.markers.length + '/' + (r.expected || r.ruler.markers.length);
@@ -1338,13 +1339,43 @@ function autoTick(r, ac, aw, ah) {
   A.still = still ? A.still + 1 : 0;
   if (!still) { if (A.cdStart) { A.cdStart = 0; A.fishOk = false; } hideCd(); return; }
   if (!A.cdStart && A.still >= 2) {
-    if (now - A.fishT > 900) { A.fishT = now; try { const fa = PK.autoFish(ac.getImageData(0, 0, aw, ah).data, aw, ah, r); A.fishOk = !!(fa.ok && fa.conf !== 'baixa'); } catch (e) { A.fishOk = false; } }
+    if (now - A.fishT > 900) {
+      A.fishT = now; let fa = null;
+      try { fa = PK.autoFish(ac.getImageData(0, 0, aw, ah).data, aw, ah, r); } catch (e) { fa = null; }
+      const zv = zeroVisible(r, aw, ah);
+      // 1ª parada: boca encostada no batente (zero na tela) -> foto da boca
+      if (fa && fa.ok && zv && !S.vid.boca && fa.snoutMm <= 8) snapBoca();
+      // a medida só vale com o zero na mesma imagem OU depois de conferir a boca no zero
+      A.fishOk = !!(fa && fa.ok && fa.conf !== 'baixa') && (zv || !!S.vid.boca);
+      if (fa && fa.ok && !zv && !S.vid.boca && now - (A.hintT || 0) > 4000) { A.hintT = now; toast('Comece pela boca no batente (zero na tela), depois desça até a cauda.', 3200); }
+    }
     if (A.fishOk) A.cdStart = now;
   }
   if (A.cdStart) {
     const n = 3 - Math.floor((now - A.cdStart) / 380);
     if (n <= 0) { hideCd(); A.cdStart = 0; A.still = 0; beep(); captureMeasure(true); return; }
     showCd(n);
+  }
+}
+// O batente (zero) aparece inteiro na imagem?
+function zeroVisible(r, aw, ah) {
+  if (!r || !r.H) return false; const R = r.ruler, m = Math.max(aw, ah) * 0.015;
+  return [PK.toPx(r, 0, R.centerLine - 25), PK.toPx(r, 0, R.centerLine + 25)].every(p => p[0] > m && p[1] > m && p[0] < aw - m && p[1] < ah - m);
+}
+function beep1() {
+  try { const C = window.AudioContext || window.webkitAudioContext; const a = S.audioCtx || (S.audioCtx = new C()); if (a.state === 'suspended') a.resume();
+    const o = a.createOscillator(), g = a.createGain(); o.frequency.value = 880; g.gain.value = 0.16; o.connect(g); g.connect(a.destination); o.start(); o.stop(a.currentTime + 0.1); } catch (e) { }
+  try { if (navigator.vibrate) navigator.vibrate(60); } catch (e) { }
+}
+function snapBoca() {
+  const v = $('#video'); if (!v || !v.videoWidth || S.vid.boca) return;
+  const c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight; c.getContext('2d').drawImage(v, 0, 0);
+  const t = +((Date.now() - S.vid.start) / 1000).toFixed(1);
+  S.vid.boca = { canvas: c, t }; S.vid.marks.push({ t, evento: 'boca', automatica: true });
+  beep1();
+  if (!S.vid.frame) {
+    $('#v-step').innerHTML = '<b>Boca no zero ✓</b> Agora desça o celular até a <b>cauda</b> e segure parado: o app conta 3-2-1 e mede (bipe duplo). Se o peixe inteiro estiver na tela, é só segurar parado.';
+    toast('Boca no zero ✓ Agora a cauda.', 2200);
   }
 }
 // Carimbo e guias desenhados no próprio vídeo
@@ -1388,6 +1419,7 @@ function drawStamp(ctx, W, H) {
   }
   ctx.textAlign = 'right'; ctx.font = `800 ${fs * .9}px Barlow, sans-serif`; ctx.fillStyle = '#ffd60a';
   ctx.fillText(phaseTxt, W - fs * .6, fs * .85);
+  if (S.vid.boca && !S.vid.frame) { ctx.fillStyle = '#c9f27a'; ctx.font = `800 ${fs * .85}px Barlow, sans-serif`; ctx.fillText('BOCA NO ZERO ✓', W - fs * .6, fs * 1.85); }
   if (S.vid.frame) { ctx.fillStyle = '#c9f27a'; ctx.font = `800 ${fs * .85}px Barlow, sans-serif`; ctx.fillText('MEDIDA CAPTURADA ✓', W - fs * .6, fs * 1.85); }
 }
 
@@ -1406,7 +1438,7 @@ function startRec() {
   S.vid.marks.push({ t: 0, evento: 'inicio' });
   $('#rec-btn').classList.add('on'); $('#rec-btn').setAttribute('aria-label', 'Finalizar');
   $('#v-step').innerHTML = S.vid.auto.on
-    ? '<b>1. Medição:</b> focinho no batente, peixe reto na linha amarela, boca fechada. <b>Segure parado:</b> o app conta 3-2-1 e captura sozinho (bipe). Pode filmar com o celular deitado e de perto.'
+    ? '<b>1. Medição:</b> focinho no batente, peixe reto na linha amarela, boca fechada. <b>Pare 1 segundo na boca</b> (bipe curto), depois <b>desça até a cauda e pare</b>: o app conta 3-2-1 e mede sozinho (bipe duplo). Peixe pequeno inteiro na tela: só segurar parado.'
     : '<b>1. Medição:</b> focinho no batente, peixe reto na linha amarela, boca fechada. Quando ficar verde, toque em <b>Capturar medida</b>.';
   try { const C = window.AudioContext || window.webkitAudioContext; if (C && !S.audioCtx) S.audioCtx = new C(); } catch (e) { }
   S.vid.timer = setTimeout(() => { if (S.rec && S.rec.state === 'recording') { toast('Tempo máximo de 3 minutos atingido.'); finishRec(true); } }, 180000);
@@ -1438,7 +1470,7 @@ async function onRecStop() {
   const dur = (Date.now() - S.vid.start) / 1000;
   let sha = '';
   try { const h = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()); sha = [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, '0')).join(''); } catch (e) { }
-  S.video = { blob, mime: blob.type, dur: +dur.toFixed(1), sha256: sha, inicio: S.vid.startIso, fim: S.vid.endIso, marcos: S.vid.marks, geoInicio: S.vid.geoStart, geoFim: S.vid.geoEnd, size: blob.size };
+  S.video = { blob, mime: blob.type, dur: +dur.toFixed(1), sha256: sha, inicio: S.vid.startIso, fim: S.vid.endIso, marcos: S.vid.marks, geoInicio: S.vid.geoStart, geoFim: S.vid.geoEnd, size: blob.size, boca: S.vid.boca };
   const frame = S.vid.frame; S.rec = null;
   stopCam();
   if (!frame) { toast('Vídeo sem medida capturada. Grave de novo.'); S.step = 'video'; return renderMedir(); }
@@ -1818,11 +1850,10 @@ function renderMedir() {
       <li>Focinho encostado no batente, boca fechada.</li>
       <li>Cauda com as pontas juntas (nadadeira fechada).</li>
       <li>Peixe reto sobre a linha central, cauda sobre a régua.</li>
-      <li>Celular em pé, de cima, com a régua no comprimento da tela.</li>
+      <li>Celular por cima do peixe, em pé ou deitado; o batente e o peixe inteiro na tela.</li>
     </ul></div>
     <button class="btn gold" id="btn-video">Gravar vídeo da medição e soltura</button>
-    ${t ? '<p class="note" style="margin:0">No torneio a captura vale só por vídeo: medição e soltura, com data, hora e localização gravadas.</p>' : `<button class="btn ghost" id="btn-open">Treino rápido por foto</button>
-    <button class="btn ghost" id="btn-gallery">Usar foto da galeria</button>`}
+    <p class="note" style="margin:0">A captura é sempre por vídeo: o app acha a medida sozinho durante a filmagem, grava a soltura e salva o vídeo e a foto da medida no celular (pasta PESKAR) para enviar ao juiz.</p>
     <p class="note">Mãos úmidas, manuseio delicado e pouco tempo fora d'água.</p>
   </div>`;
   $('#m-t').onchange = e => { S.medirT = e.target.value; S.especie = null; renderMedir(); };
@@ -2003,11 +2034,18 @@ function processSource(src, sw, sh) {
       const a = PK.autoFish(ctx.getImageData(0, 0, w, h).data, w, h, r);
       S.shot.auto = a;
       if (a.ok) { S.shot.tail = a.tail; S.shot.snout = a.snout; }
+      // medição em 2 paradas: a boca foi conferida no zero no começo do vídeo e este quadro mostra só a cauda
+      const z = PK.toPx(r, 0, cl), zIn = z[0] >= 0 && z[1] >= 0 && z[0] <= w && z[1] <= h;
+      if (S.video && S.video.boca && a.ok && !zIn) { S.shot.snout = PK.toPx(r, 0, a.snoutYmm); S.shot.bocaZero = S.video.boca.t; bocaMsgs(r); }
     } catch (e) { S.shot.auto = { ok: false, notes: [] }; }
   }
   S.step = 'review';
   if (location.hash !== '#medir') location.hash = 'medir'; else renderMedir();
   window.scrollTo(0, 0);
+}
+function bocaMsgs(r) {
+  const n = r.messages.length; r.messages = r.messages.filter(t => !/batente/.test(t) && !(r.markers.length >= 4 && /^Poucos quadrados/.test(t)));
+  if (n && !r.messages.length && r.status === 'yellow') r.status = 'green';
 }
 function measure() {
   const sh = S.shot, r = sh.res; if (!r.H) return null;
@@ -2024,6 +2062,7 @@ function renderReview() {
   <p class="lead">${r.H ? 'Use a lupa para acertar. O ponto branco marca o focinho, encostado no zero.' : 'O app não encontrou os quadrados de referência no quadro da medida. Grave de novo seguindo as dicas.'}</p>
   ${r.H ? `<div class="tailhelp"><svg viewBox="0 0 92 46" aria-hidden="true"><path d="M4 23 C 20 6, 44 6, 58 20 L 80 8 L 74 23 L 80 38 L 58 26 C 44 40, 20 40, 4 23 Z" fill="#cfe7c4" stroke="#1e9e4a" stroke-width="2"/><path d="M80 8 L74 23 L80 38" fill="none" stroke="#0f5a2e" stroke-width="2"/><line x1="81" y1="2" x2="81" y2="44" stroke="#8ed12e" stroke-width="3"/><circle cx="12" cy="20" r="2" fill="#0f2b1b"/></svg><div><b>Fim da cauda:</b> junte as pontas da nadadeira e marque a ponta mais comprida. A linha verde atravessa a régua nesse ponto.</div></div>` : ''}
   <div class="stage" id="stage" style="margin-top:12px"></div>
+  ${sh.bocaZero != null ? '<div class="section"><h3>1ª parada · boca no zero</h3><img id="boca-prev" class="photo" alt="Foto da boca no batente"></div>' : ''}
   <div class="statusbar"><div class="dot ${r.status}"></div><div><b>${titles[r.status]}</b><span>${r.markers.length} de ${r.expected || r.ruler.markers.length} quadrados · ${esc(qrTxt)}</span></div></div>
   <div id="measure-box"></div>
   <ul class="msgs" id="msgs"></ul>
@@ -2049,8 +2088,9 @@ function renderReview() {
     if (need.length) { $('#ck-err').textContent = 'Confirme todos os itens antes de enviar.'; return; }
     register(cv);
   };
+  if (sh.bocaZero != null && $('#boca-prev')) { try { $('#boca-prev').src = S.video.boca.canvas.toDataURL('image/jpeg', .8); } catch (e) { } }
   if (S.video && $('#v-prev')) { try { $('#v-prev').src = URL.createObjectURL(S.video.blob); } catch (e) { } }
-  if (r.H) { addHandle(stage, cv, 'snout', 'FOCINHO'); addHandle(stage, cv, 'tail', 'CAUDA'); }
+  if (r.H) { if (sh.bocaZero == null) addHandle(stage, cv, 'snout', 'FOCINHO'); addHandle(stage, cv, 'tail', 'CAUDA'); }
   updateMeasure();
 }
 function drawOverlay(cv) {
@@ -2126,8 +2166,9 @@ function updateMeasure() {
     else if (a.ok && moved) items.push(`<li>Ponto ajustado à mão (automático: ${cm(a.tailMm)} cm).</li>`);
     else items.push('<li>Não achei a cauda sozinho nesta foto. Arraste o ponto verde até a ponta da cauda.</li>');
   }
+  if (m && S.shot.bocaZero != null) items.push(`<li class="ok">Boca conferida no zero aos ${S.shot.bocaZero.toFixed(1).replace('.', ',')} s do vídeo (foto da boca junto). Medida lida pelos quadrados perto da cauda.</li>`);
   if (m) {
-    if (Math.abs(m.snoutMm) > 5) items.push(`<li class="bad">Focinho a ${Math.abs(m.snoutMm).toFixed(0)} mm do zero. Encoste no batente ou ajuste o ponto branco.</li>`);
+    if (S.shot.bocaZero == null && Math.abs(m.snoutMm) > 5) items.push(`<li class="bad">Focinho a ${Math.abs(m.snoutMm).toFixed(0)} mm do zero. Encoste no batente ou ajuste o ponto branco.</li>`);
     const cl = r.ruler.centerLine, dT = Math.abs(m.tailY - cl), dS = Math.abs(m.snoutY - cl);
     if (m.mm > 50 && (dT > 25 || dS > 18)) items.push(`<li class="bad">Peixe fora da linha central (${dS > 18 ? 'focinho' : 'cauda'} a ${Math.round(Math.max(dS, dT))} mm). Deixe o peixe reto sobre a linha amarela.</li>`);
     else if (m.mm > 50) items.push('<li class="ok">Peixe reto sobre a linha central.</li>');
@@ -2141,6 +2182,15 @@ function thumb(canvas) {
   const c = document.createElement('canvas'); c.width = Math.round(canvas.width * sc); c.height = Math.round(canvas.height * sc);
   c.getContext('2d').drawImage(canvas, 0, 0, c.width, c.height);
   return c.toDataURL('image/jpeg', 0.72);
+}
+function withBoca(cv, B) {
+  const bc = B.canvas, bw = cv.width, bh = Math.round(bc.height * bw / bc.width), band = Math.max(28, Math.round(bw / 26));
+  const c = document.createElement('canvas'); c.width = bw; c.height = cv.height + band + bh;
+  const x = c.getContext('2d'); x.drawImage(cv, 0, 0);
+  x.fillStyle = '#061e11'; x.fillRect(0, cv.height, bw, band);
+  x.fillStyle = '#c9f27a'; x.font = `800 ${Math.round(band * .55)}px Barlow, sans-serif`; x.textBaseline = 'middle';
+  x.fillText(`1ª PARADA · BOCA NO ZERO (${B.t.toFixed(1)} s do vídeo)  ·  acima: 2ª PARADA · CAUDA`, band * .4, cv.height + band / 2);
+  x.drawImage(bc, 0, cv.height + band, bw, bh); return c;
 }
 function canvasBlob(cv, max, q) {
   const sc = Math.min(1, max / Math.max(cv.width, cv.height));
@@ -2165,10 +2215,12 @@ async function register(cv) {
   };
   if (S.video) {
     const V = S.video;
+    if (V.boca) cap.boca_no_zero = { t: V.boca.t, quadro_separado: sh.bocaZero != null };
     cap.video = { tipo: V.mime, duracao_s: V.dur, sha256: V.sha256, inicio: V.inicio, fim: V.fim, marcos: V.marcos, bytes: V.size };
     cap.geo = { inicio: V.geoInicio, fim: V.geoFim };
-    try { await IDB.put(cap.id + ':video', V.blob); await IDB.put(cap.id + ':foto', await canvasBlob(cv, 1600)); cap.video.salvo = true; }
+    try { await IDB.put(cap.id + ':video', V.blob); await IDB.put(cap.id + ':foto', await canvasBlob(V.boca && sh.bocaZero != null ? withBoca(cv, V.boca) : cv, 1600)); if (V.boca) await IDB.put(cap.id + ':boca', await canvasBlob(V.boca.canvas, 1600)); cap.video.salvo = true; }
     catch (e) { cap.video.salvo = false; }
+    try { cap.video.no_celular = await saveToPhone(cap); } catch (e) { cap.video.no_celular = false; }
   }
   capturas.unshift(cap);
   S.lastSaved = saveCaps(); S.lastCap = cap; S.shot = null; S.video = null; S.capId = null; S.step = 'done';
@@ -2197,6 +2249,7 @@ function buildDados(c) {
     torneio: t ? { id: t.id, nome: t.nome, local: t.local } : null,
     pescador: { nome: perfil.nome || null, apelido: (ins && ins.apelido) || perfil.apelido || null, cidade: perfil.cidade || null, inscricao: ins ? ins.numero : null, categoria: ins ? ins.categoria : null },
     especie: c.especie,
+    boca_no_zero: c.boca_no_zero || null,
     medida: { mm: c.mm, cm: +(c.mm / 10).toFixed(1), incerteza_mm: c.unc, focinho_do_zero_mm: c.snoutMm, desvio_linha_central_mm: c.desvio || null, automatica_mm: c.auto ? c.auto.mm : null, confianca_auto: c.auto ? c.auto.conf || null : null, ajuste_manual_mm: c.auto ? c.auto.ajuste_mm == null ? null : c.auto.ajuste_mm : null },
     regua: { modelo: c.regua, qr_conferido: !!c.qr, quadrados_lidos: c.markers, quadrados_esperados: c.expected, qualidade: c.quality },
     pontos_px: c.pts || null, homografia_px_para_mm: c.H || null,
@@ -2206,6 +2259,18 @@ function buildDados(c) {
     localizacao: c.geo || null,
     status: c.status, capturado_em: c.at
   };
+}
+// Salva vídeo e foto da medida na galeria do celular (Filmes/PESKAR e Imagens/PESKAR)
+async function saveToPhone(c) {
+  const n = nativeApp(); if (!n || !n.saveMedia) return false;
+  const vid = await IDB.get(c.id + ':video'), foto = await IDB.get(c.id + ':foto'), boca = await IDB.get(c.id + ':boca');
+  const files = []; if (vid) files.push([`PESKAR_${c.id}_video.webm`, vid]); if (foto) files.push([`PESKAR_${c.id}_medida.jpg`, foto]); if (boca) files.push([`PESKAR_${c.id}_boca.jpg`, boca]);
+  if (!files.length) return false;
+  n.reset();
+  for (const [name, blob] of files) { n.begin(name); const CH = 786432; for (let i = 0; i < blob.size; i += CH) n.append(await blobB64(blob.slice(i, i + CH))); n.end(); }
+  let r = 0; try { r = +n.saveMedia(JSON.stringify(files.map(f => f[0]))); } catch (e) { r = 0; }
+  if (r > 0) toast('Vídeo e foto salvos no celular (pasta PESKAR).', 3200);
+  return r === files.length;
 }
 function blobB64(part) { return new Promise((ok, no) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1] || ''); fr.onerror = () => no(fr.error); fr.readAsDataURL(part); }); }
 // ZIP sem compressão (vídeo e jpg já são comprimidos): um arquivo só para mandar no WhatsApp/Telegram.
@@ -2387,7 +2452,7 @@ function renderCap(id) {
   $('#btn-del').onclick = () => {
     $('#confirm').innerHTML = `<div class="panel" style="margin-top:12px"><p style="margin-top:0">Apagar esta captura do aparelho?</p><div class="row"><button class="btn ghost" id="no">Cancelar</button><button class="btn gold" id="yes">Apagar</button></div></div>`;
     $('#no').onclick = () => $('#confirm').innerHTML = '';
-    $('#yes').onclick = () => { capturas = capturas.filter(x => x.id !== c.id); saveCaps(); IDB.del(c.id + ':video'); IDB.del(c.id + ':foto'); go('perfil'); };
+    $('#yes').onclick = () => { capturas = capturas.filter(x => x.id !== c.id); saveCaps(); IDB.del(c.id + ':video'); IDB.del(c.id + ':foto'); IDB.del(c.id + ':boca'); go('perfil'); };
   };
 }
 
